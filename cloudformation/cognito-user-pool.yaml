@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IVF Witness Capture - Cognito User Pool for Authentication'
+
+Resources:
+  # ========================================
+  # Cognito User Pool
+  # ========================================
+  IVFUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: IVF-WitnessCapture-Users
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: false
+        - Name: name
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: role
+          AttributeDataType: String
+          Mutable: true
+        - Name: department
+          AttributeDataType: String
+          Mutable: true
+        - Name: employeeId
+          AttributeDataType: String
+          Mutable: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      UserPoolAddOns:
+        AdvancedSecurityMode: AUDIT
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate:
+          - email
+      UserPoolTags:
+        Application: FMS-IVF-WitnessCapture
+        Environment: Development
+
+  # ========================================
+  # User Pool Client (for React app)
+  # ========================================
+  IVFUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: IVF-WitnessCapture-WebApp
+      UserPoolId: !Ref IVFUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+      PreventUserExistenceErrors: ENABLED
+      RefreshTokenValidity: 30
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      TokenValidityUnits:
+        RefreshToken: days
+        AccessToken: minutes
+        IdToken: minutes
+      ReadAttributes:
+        - email
+        - name
+        - custom:role
+        - custom:department
+        - custom:employeeId
+
+  # ========================================
+  # User Groups
+  # ========================================
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Admins
+      Description: System administrators with full access
+      UserPoolId: !Ref IVFUserPool
+      Precedence: 1
+
+  NurseGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Nurses
+      Description: Nurses and technicians for daily operations
+      UserPoolId: !Ref IVFUserPool
+      Precedence: 2
+
+  SupervisorGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Supervisors
+      Description: Supervisors for oversight and quality control
+      UserPoolId: !Ref IVFUserPool
+      Precedence: 3
+
+  ViewerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Viewers
+      Description: Read-only access for observers
+      UserPoolId: !Ref IVFUserPool
+      Precedence: 4
+
+Outputs:
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref IVFUserPool
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolId'
+
+  UserPoolArn:
+    Description: Cognito User Pool ARN
+    Value: !GetAtt IVFUserPool.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolArn'
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref IVFUserPoolClient
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolClientId'
+
+  UserPoolDomain:
+    Description: Cognito User Pool Domain (for hosted UI - optional)
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${IVFUserPool}'

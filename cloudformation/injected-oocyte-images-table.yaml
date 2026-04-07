@@ -1,0 +1,32 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DynamoDB table for ICSI injected oocyte images metadata'
+
+Resources:
+  InjectedOocyteImagesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: IVF-InjectedOocyteImages
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: imageId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: imageId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: SessionIdIndex
+          KeySchema:
+            - AttributeName: sessionId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+Outputs:
+  TableName:
+    Description: Name of the DynamoDB table
+    Value: !Ref InjectedOocyteImagesTable
+  TableArn:
+    Description: ARN of the DynamoDB table
+    Value: !GetAtt InjectedOocyteImagesTable.Arn

@@ -1,0 +1,380 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IVF Witness Capture - Lambda Functions and Event Processing'
+
+Parameters:
+  DynamoDBStackName:
+    Type: String
+    Default: fms-ivf-witness-capture-dynamodb
+    Description: Name of the DynamoDB CloudFormation stack
+  
+  S3StackName:
+    Type: String
+    Default: fms-ivf-witness-capture-s3
+    Description: Name of the S3 CloudFormation stack
+
+Resources:
+  # ========================================
+  # IAM Role for Lambda Functions
+  # ========================================
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: IVF-WitnessCapture-Lambda-Role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+        - PolicyName: IVF-Lambda-Permissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # DynamoDB permissions
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - Fn::ImportValue: !Sub '${DynamoDBStackName}-CasesTableArn'
+                  - !Sub 
+                    - '${TableArn}/*'
+                    - TableArn:
+                        Fn::ImportValue: !Sub '${DynamoDBStackName}-CasesTableArn'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-LabelValidationExtractions'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-LabelValidationExtractions/*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-MaleSampleCollectionExtractions'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-MaleSampleCollectionExtractions/*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-OocyteCollectionExtractions'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-OocyteCollectionExtractions/*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-DenudationExtractions'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-DenudationExtractions/*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-ICSIExtractions'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-ICSIExtractions/*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-CultureExtractions'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-CultureExtractions/*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-ValidationFailures'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-ValidationFailures/*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-InjectedOocyteImages'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-InjectedOocyteImages/*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-AuditLog'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-AuditLog/*'
+              
+              # DynamoDB Streams permissions
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetRecords
+                  - dynamodb:GetShardIterator
+                  - dynamodb:DescribeStream
+                  - dynamodb:ListStreams
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-LabelValidationExtractions/stream/*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-MaleSampleCollectionExtractions/stream/*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-OocyteCollectionExtractions/stream/*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-DenudationExtractions/stream/*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-ICSIExtractions/stream/*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/IVF-CultureExtractions/stream/*'
+              
+              # S3 permissions
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource:
+                  - !Sub
+                    - '${BucketArn}/*'
+                    - BucketArn:
+                        Fn::ImportValue: !Sub '${S3StackName}-BucketArn'
+              
+              # Bedrock permissions
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource:
+                  - !Sub 'arn:aws:bedrock:*::foundation-model/*'
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/*'
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*'
+
+  # ========================================
+  # Lambda Function: Registration Handler
+  # ========================================
+  RegistrationHandlerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: IVF-RegistrationHandler
+      Runtime: python3.12
+      Handler: registration-handler.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Code:
+        ZipFile: |
+          # Placeholder - will be updated with deployment package
+          def lambda_handler(event, context):
+              return {'statusCode': 200, 'body': 'Placeholder'}
+      Environment:
+        Variables:
+          CASES_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-CasesTable'
+      Tags:
+        - Key: Application
+          Value: FMS-IVF-WitnessCapture
+
+  # ========================================
+  # Lambda Function: List Sessions
+  # ========================================
+  ListSessionsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: IVF-ListSessions
+      Runtime: python3.12
+      Handler: list-sessions.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Code:
+        ZipFile: |
+          # Placeholder - will be updated with deployment package
+          def lambda_handler(event, context):
+              return {'statusCode': 200, 'body': 'Placeholder'}
+      Environment:
+        Variables:
+          CASES_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-CasesTable'
+      Tags:
+        - Key: Application
+          Value: FMS-IVF-WitnessCapture
+
+  # ========================================
+  # Lambda Function: Presigned URL Generator
+  # ========================================
+  PresignedUrlGeneratorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: IVF-PresignedUrlGenerator
+      Runtime: python3.12
+      Handler: presigned-url-generator.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Code:
+        ZipFile: |
+          # Placeholder - will be updated with deployment package
+          def lambda_handler(event, context):
+              return {'statusCode': 200, 'body': 'Placeholder'}
+      Environment:
+        Variables:
+          CASES_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-CasesTable'
+          BUCKET_NAME:
+            Fn::ImportValue: !Sub '${S3StackName}-BucketName'
+          AUDIT_TABLE: IVF-AuditLog
+      Tags:
+        - Key: Application
+          Value: FMS-IVF-WitnessCapture
+
+  # ========================================
+  # Lambda Function: OCR Processor
+  # ========================================
+  OCRProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: IVF-OCRProcessor
+      Runtime: python3.12
+      Handler: ocr-processor.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 512
+      Code:
+        ZipFile: |
+          # Placeholder - will be updated with deployment package
+          def lambda_handler(event, context):
+              return {'statusCode': 200, 'body': 'Placeholder'}
+      Environment:
+        Variables:
+          CASES_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-CasesTable'
+          LABEL_VALIDATION_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-LabelValidationTable'
+          MALE_SAMPLE_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-MaleSampleCollectionTable'
+          OOCYTE_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-OocyteCollectionTable'
+          DENUDATION_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-DenudationTable'
+          ICSI_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-ICSITable'
+          CULTURE_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-CultureTable'
+          BUCKET_NAME:
+            Fn::ImportValue: !Sub '${S3StackName}-BucketName'
+          AUDIT_TABLE: IVF-AuditLog
+      Tags:
+        - Key: Application
+          Value: FMS-IVF-WitnessCapture
+
+  # ========================================
+  # Lambda Function: Comparison Validator
+  # ========================================
+  ComparisonValidatorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: IVF-ComparisonValidator
+      Runtime: python3.12
+      Handler: comparison-validator.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Code:
+        ZipFile: |
+          # Placeholder - will be updated with deployment package
+          def lambda_handler(event, context):
+              return {'statusCode': 200, 'body': 'Placeholder'}
+      Environment:
+        Variables:
+          CASES_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-CasesTable'
+          AUDIT_TABLE: IVF-AuditLog
+      Tags:
+        - Key: Application
+          Value: FMS-IVF-WitnessCapture
+
+  # ========================================
+  # EventBridge Rule: S3 Object Created
+  # ========================================
+  S3ObjectCreatedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: IVF-S3-ObjectCreated-Rule
+      Description: Trigger OCR processor when image uploaded to S3
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+        detail:
+          bucket:
+            name:
+              - Fn::ImportValue: !Sub '${S3StackName}-BucketName'
+      Targets:
+        - Arn: !GetAtt OCRProcessorFunction.Arn
+          Id: OCRProcessorTarget
+
+  # Permission for EventBridge to invoke OCR Lambda
+  OCRProcessorEventBridgePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref OCRProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt S3ObjectCreatedRule.Arn
+
+  # ========================================
+  # DynamoDB Stream Event Source Mappings
+  # ========================================
+  LabelValidationStreamMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn:
+        Fn::ImportValue: !Sub '${DynamoDBStackName}-LabelValidationStreamArn'
+      FunctionName: !GetAtt ComparisonValidatorFunction.Arn
+      StartingPosition: LATEST
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 5
+
+  MaleSampleCollectionStreamMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn:
+        Fn::ImportValue: !Sub '${DynamoDBStackName}-MaleSampleCollectionStreamArn'
+      FunctionName: !GetAtt ComparisonValidatorFunction.Arn
+      StartingPosition: LATEST
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 5
+
+  OocyteCollectionStreamMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn:
+        Fn::ImportValue: !Sub '${DynamoDBStackName}-OocyteCollectionStreamArn'
+      FunctionName: !GetAtt ComparisonValidatorFunction.Arn
+      StartingPosition: LATEST
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 5
+
+  DenudationStreamMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn:
+        Fn::ImportValue: !Sub '${DynamoDBStackName}-DenudationStreamArn'
+      FunctionName: !GetAtt ComparisonValidatorFunction.Arn
+      StartingPosition: LATEST
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 5
+
+  ICSIStreamMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn:
+        Fn::ImportValue: !Sub '${DynamoDBStackName}-ICSIStreamArn'
+      FunctionName: !GetAtt ComparisonValidatorFunction.Arn
+      StartingPosition: LATEST
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 5
+
+  CultureStreamMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn:
+        Fn::ImportValue: !Sub '${DynamoDBStackName}-CultureStreamArn'
+      FunctionName: !GetAtt ComparisonValidatorFunction.Arn
+      StartingPosition: LATEST
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 5
+
+Outputs:
+  RegistrationHandlerArn:
+    Description: Registration Handler Lambda ARN
+    Value: !GetAtt RegistrationHandlerFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RegistrationHandlerArn'
+
+  ListSessionsArn:
+    Description: List Sessions Lambda ARN
+    Value: !GetAtt ListSessionsFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ListSessionsArn'
+
+  PresignedUrlGeneratorArn:
+    Description: Presigned URL Generator Lambda ARN
+    Value: !GetAtt PresignedUrlGeneratorFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-PresignedUrlGeneratorArn'
+
+  OCRProcessorArn:
+    Description: OCR Processor Lambda ARN
+    Value: !GetAtt OCRProcessorFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-OCRProcessorArn'
+
+  ComparisonValidatorArn:
+    Description: Comparison Validator Lambda ARN
+    Value: !GetAtt ComparisonValidatorFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ComparisonValidatorArn'
+
+  LambdaExecutionRoleArn:
+    Description: Lambda Execution Role ARN
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaRoleArn'

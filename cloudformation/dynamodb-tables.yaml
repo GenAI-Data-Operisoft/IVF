@@ -1,0 +1,308 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IVF Witness Capture - DynamoDB Tables'
+
+Resources:
+  # ========================================
+  # Main Cases Table
+  # ========================================
+  IVFCasesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: IVF-Cases
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: sessionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: sessionId
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Application
+          Value: FMS-IVF-WitnessCapture
+        - Key: Environment
+          Value: Development
+
+  # ========================================
+  # Label Validation Extractions Table
+  # ========================================
+  LabelValidationExtractionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: IVF-LabelValidationExtractions
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: extractionId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: extractionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: SessionIdIndex
+          KeySchema:
+            - AttributeName: sessionId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Application
+          Value: FMS-IVF-WitnessCapture
+        - Key: Environment
+          Value: Development
+
+  # ========================================
+  # Male Sample Collection Extractions Table
+  # ========================================
+  MaleSampleCollectionExtractionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: IVF-MaleSampleCollectionExtractions
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: extractionId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: extractionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: SessionIdIndex
+          KeySchema:
+            - AttributeName: sessionId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Application
+          Value: FMS-IVF-WitnessCapture
+        - Key: Environment
+          Value: Development
+
+  # ========================================
+  # Oocyte Collection Extractions Table
+  # ========================================
+  OocyteCollectionExtractionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: IVF-OocyteCollectionExtractions
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: extractionId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: extractionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: SessionIdIndex
+          KeySchema:
+            - AttributeName: sessionId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Application
+          Value: FMS-IVF-WitnessCapture
+        - Key: Environment
+          Value: Development
+
+  # ========================================
+  # Denudation Extractions Table
+  # ========================================
+  DenudationExtractionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: IVF-DenudationExtractions
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: extractionId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: extractionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: SessionIdIndex
+          KeySchema:
+            - AttributeName: sessionId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Application
+          Value: FMS-IVF-WitnessCapture
+        - Key: Environment
+          Value: Development
+
+  # ========================================
+  # ICSI Extractions Table
+  # ========================================
+  ICSIExtractionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: IVF-ICSIExtractions
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: extractionId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: extractionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: SessionIdIndex
+          KeySchema:
+            - AttributeName: sessionId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Application
+          Value: FMS-IVF-WitnessCapture
+        - Key: Environment
+          Value: Development
+
+  # ========================================
+  # Culture Extractions Table
+  # ========================================
+  CultureExtractionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: IVF-CultureExtractions
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: extractionId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: extractionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: SessionIdIndex
+          KeySchema:
+            - AttributeName: sessionId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Application
+          Value: FMS-IVF-WitnessCapture
+        - Key: Environment
+          Value: Development
+
+Outputs:
+  CasesTableName:
+    Description: Cases table name
+    Value: !Ref IVFCasesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-CasesTable'
+
+  CasesTableArn:
+    Description: Cases table ARN
+    Value: !GetAtt IVFCasesTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CasesTableArn'
+
+  LabelValidationTableName:
+    Description: Label Validation Extractions table name
+    Value: !Ref LabelValidationExtractionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-LabelValidationTable'
+
+  LabelValidationTableStreamArn:
+    Description: Label Validation table stream ARN
+    Value: !GetAtt LabelValidationExtractionsTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-LabelValidationStreamArn'
+
+  MaleSampleCollectionTableName:
+    Description: Male Sample Collection Extractions table name
+    Value: !Ref MaleSampleCollectionExtractionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-MaleSampleCollectionTable'
+
+  MaleSampleCollectionTableStreamArn:
+    Description: Male Sample Collection table stream ARN
+    Value: !GetAtt MaleSampleCollectionExtractionsTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-MaleSampleCollectionStreamArn'
+
+  OocyteCollectionTableName:
+    Description: Oocyte Collection Extractions table name
+    Value: !Ref OocyteCollectionExtractionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-OocyteCollectionTable'
+
+  OocyteCollectionTableStreamArn:
+    Description: Oocyte Collection table stream ARN
+    Value: !GetAtt OocyteCollectionExtractionsTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-OocyteCollectionStreamArn'
+
+  DenudationTableName:
+    Description: Denudation Extractions table name
+    Value: !Ref DenudationExtractionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-DenudationTable'
+
+  DenudationTableStreamArn:
+    Description: Denudation table stream ARN
+    Value: !GetAtt DenudationExtractionsTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-DenudationStreamArn'
+
+  ICSITableName:
+    Description: ICSI Extractions table name
+    Value: !Ref ICSIExtractionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-ICSITable'
+
+  ICSITableStreamArn:
+    Description: ICSI table stream ARN
+    Value: !GetAtt ICSIExtractionsTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-ICSIStreamArn'
+
+  CultureTableName:
+    Description: Culture Extractions table name
+    Value: !Ref CultureExtractionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-CultureTable'
+
+  CultureTableStreamArn:
+    Description: Culture table stream ARN
+    Value: !GetAtt CultureExtractionsTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-CultureStreamArn'

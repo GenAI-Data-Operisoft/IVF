@@ -1,0 +1,1402 @@
+﻿AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IVF Witness Capture - API Gateway REST API'
+
+Parameters:
+  LambdaStackName:
+    Type: String
+    Default: fms-ivf-witness-capture-lambda
+    Description: Name of the Lambda CloudFormation stack
+  
+  DynamoDBStackName:
+    Type: String
+    Default: fms-ivf-witness-capture-dynamodb
+    Description: Name of the DynamoDB CloudFormation stack
+
+Resources:
+  # ========================================
+  # API Gateway REST API
+  # ========================================
+  IVFWitnessCaptureAPI:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: IVF-WitnessCapture-API
+      Description: API for IVF Witness Capture System
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Tags:
+        - Key: Application
+          Value: FMS-IVF-WitnessCapture
+
+  # ========================================
+  # API Gateway Resources
+  # ========================================
+  
+  # /register
+  RegisterResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ParentId: !GetAtt IVFWitnessCaptureAPI.RootResourceId
+      PathPart: register
+
+  # /presigned-url
+  PresignedUrlResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ParentId: !GetAtt IVFWitnessCaptureAPI.RootResourceId
+      PathPart: presigned-url
+
+  # /case
+  CaseResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ParentId: !GetAtt IVFWitnessCaptureAPI.RootResourceId
+      PathPart: case
+
+  # /case/{sessionId}
+  CaseSessionResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ParentId: !Ref CaseResource
+      PathPart: '{sessionId}'
+
+  # /case/{sessionId}/stage/{stage}
+  CaseStageResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ParentId: !Ref CaseSessionResource
+      PathPart: stage
+
+  CaseStageDetailResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ParentId: !Ref CaseStageResource
+      PathPart: '{stage}'
+
+  # /case/{sessionId}/patients
+  CasePatientsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ParentId: !Ref CaseSessionResource
+      PathPart: patients
+
+  # /models
+  ModelsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ParentId: !GetAtt IVFWitnessCaptureAPI.RootResourceId
+      PathPart: models
+
+  # /failures
+  FailuresResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ParentId: !GetAtt IVFWitnessCaptureAPI.RootResourceId
+      PathPart: failures
+
+  # /failures/resolve
+  FailuresResolveResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ParentId: !Ref FailuresResource
+      PathPart: resolve
+
+  # /metrics
+  MetricsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ParentId: !GetAtt IVFWitnessCaptureAPI.RootResourceId
+      PathPart: metrics
+
+  # /metrics/export
+  MetricsExportResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ParentId: !Ref MetricsResource
+      PathPart: export
+
+  # /sessions
+  SessionsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ParentId: !GetAtt IVFWitnessCaptureAPI.RootResourceId
+      PathPart: sessions
+
+  # ========================================
+  # POST /register
+  # ========================================
+  RegisterMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref RegisterResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaArn}/invocations'
+          - LambdaArn:
+              Fn::ImportValue: !Sub '${LambdaStackName}-RegistrationHandlerArn'
+
+  RegisterMethodOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref RegisterResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # ========================================
+  # POST /presigned-url
+  # ========================================
+  PresignedUrlMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref PresignedUrlResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaArn}/invocations'
+          - LambdaArn:
+              Fn::ImportValue: !Sub '${LambdaStackName}-PresignedUrlGeneratorArn'
+
+  PresignedUrlMethodOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref PresignedUrlResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # ========================================
+  # GET /case/{sessionId}
+  # ========================================
+  GetCaseFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: IVF-GetCase
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role:
+        Fn::ImportValue: !Sub '${LambdaStackName}-LambdaRoleArn'
+      Timeout: 10
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          
+          dynamodb = boto3.resource('dynamodb')
+          cases_table = dynamodb.Table(os.environ['CASES_TABLE'])
+          
+          def lambda_handler(event, context):
+              try:
+                  session_id = event['pathParameters']['sessionId']
+                  
+                  response = cases_table.get_item(Key={'sessionId': session_id})
+                  
+                  if 'Item' not in response:
+                      return {
+                          'statusCode': 404,
+                          'headers': {
+                              'Content-Type': 'application/json',
+                              'Access-Control-Allow-Origin': '*'
+                          },
+                          'body': json.dumps({'error': 'Case not found'})
+                      }
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'
+                      },
+                      'body': json.dumps(response['Item'], default=str)
+                  }
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  return {
+                      'statusCode': 500,
+                      'headers': {'Content-Type': 'application/json'},
+                      'body': json.dumps({'error': 'Internal server error'})
+                  }
+      Environment:
+        Variables:
+          CASES_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-CasesTable'
+
+  GetCaseMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref CaseSessionResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetCaseFunction.Arn}/invocations'
+
+  GetCaseMethodOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref CaseSessionResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # ========================================
+  # GET /case/{sessionId}/stage/{stage}
+  # ========================================
+  GetStageFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: IVF-GetStage
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role:
+        Fn::ImportValue: !Sub '${LambdaStackName}-LambdaRoleArn'
+      Timeout: 10
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          
+          dynamodb = boto3.resource('dynamodb')
+          
+          STAGE_TABLE_MAP = {
+              'label_validation': os.environ.get('LABEL_VALIDATION_TABLE'),
+              'male_sample_collection': os.environ.get('MALE_SAMPLE_TABLE'),
+              'oocyte_collection': os.environ.get('OOCYTE_TABLE'),
+              'denudation': os.environ.get('DENUDATION_TABLE'),
+              'icsi': os.environ.get('ICSI_TABLE'),
+              'culture': os.environ.get('CULTURE_TABLE')
+          }
+          
+          def lambda_handler(event, context):
+              try:
+                  session_id = event['pathParameters']['sessionId']
+                  stage = event['pathParameters']['stage']
+                  
+                  if stage not in STAGE_TABLE_MAP:
+                      return {
+                          'statusCode': 400,
+                          'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+                          'body': json.dumps({'error': 'Invalid stage'})
+                      }
+                  
+                  table = dynamodb.Table(STAGE_TABLE_MAP[stage])
+                  
+                  response = table.query(
+                      IndexName='SessionIdIndex',
+                      KeyConditionExpression='sessionId = :sid',
+                      ExpressionAttributeValues={':sid': session_id}
+                  )
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'
+                      },
+                      'body': json.dumps({
+                          'stage': stage,
+                          'sessionId': session_id,
+                          'extractions': response['Items']
+                      }, default=str)
+                  }
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  return {
+                      'statusCode': 500,
+                      'headers': {'Content-Type': 'application/json'},
+                      'body': json.dumps({'error': 'Internal server error'})
+                  }
+      Environment:
+        Variables:
+          LABEL_VALIDATION_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-LabelValidationTable'
+          MALE_SAMPLE_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-MaleSampleCollectionTable'
+          OOCYTE_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-OocyteCollectionTable'
+          DENUDATION_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-DenudationTable'
+          ICSI_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-ICSITable'
+          CULTURE_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-CultureTable'
+
+  GetStageMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref CaseStageDetailResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetStageFunction.Arn}/invocations'
+
+  GetStageMethodOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref CaseStageDetailResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # ========================================
+  # PUT /case/{sessionId}/patients
+  # ========================================
+  UpdatePatientDetailsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: IVF-UpdatePatientDetails
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role:
+        Fn::ImportValue: !Sub '${LambdaStackName}-LambdaRoleArn'
+      Timeout: 10
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from datetime import datetime
+          
+          dynamodb = boto3.resource('dynamodb')
+          cases_table = dynamodb.Table(os.environ['CASES_TABLE'])
+          
+          def lambda_handler(event, context):
+              try:
+                  session_id = event['pathParameters']['sessionId']
+                  body = json.loads(event['body'])
+                  
+                  male_patient = body.get('male_patient', {})
+                  female_patient = body.get('female_patient', {})
+                  
+                  # Validate required fields (only name and mpeid are required)
+                  required_male_fields = ['name', 'mpeid']
+                  required_female_fields = ['name', 'mpeid']
+                  
+                  for field in required_male_fields:
+                      if not male_patient.get(field):
+                          return {
+                              'statusCode': 400,
+                              'headers': {
+                                  'Access-Control-Allow-Origin': '*',
+                                  'Access-Control-Allow-Headers': 'Content-Type',
+                                  'Access-Control-Allow-Methods': 'PUT,OPTIONS'
+                              },
+                              'body': json.dumps({'error': f'Male patient {field} is required'})
+                          }
+                  
+                  for field in required_female_fields:
+                      if not female_patient.get(field):
+                          return {
+                              'statusCode': 400,
+                              'headers': {
+                                  'Access-Control-Allow-Origin': '*',
+                                  'Access-Control-Allow-Headers': 'Content-Type',
+                                  'Access-Control-Allow-Methods': 'PUT,OPTIONS'
+                              },
+                              'body': json.dumps({'error': f'Female patient {field} is required'})
+                          }
+                  
+                  # Check if case exists
+                  response = cases_table.get_item(Key={'sessionId': session_id})
+                  if 'Item' not in response:
+                      return {
+                          'statusCode': 404,
+                          'headers': {
+                              'Access-Control-Allow-Origin': '*',
+                              'Access-Control-Allow-Headers': 'Content-Type',
+                              'Access-Control-Allow-Methods': 'PUT,OPTIONS'
+                          },
+                          'body': json.dumps({'error': 'Case not found'})
+                      }
+                  
+                  # Update patient details
+                  update_expression = 'SET male_patient = :male, female_patient = :female, updated_at = :timestamp'
+                  expression_values = {
+                      ':male': {
+                          'name': male_patient['name'],
+                          'last_name': male_patient.get('last_name', ''),
+                          'mpeid': male_patient['mpeid'],
+                          'dob': male_patient.get('dob', '')
+                      },
+                      ':female': {
+                          'name': female_patient['name'],
+                          'last_name': female_patient.get('last_name', ''),
+                          'mpeid': female_patient['mpeid'],
+                          'dob': female_patient.get('dob', '')
+                      },
+                      ':timestamp': datetime.utcnow().isoformat()
+                  }
+                  
+                  cases_table.update_item(
+                      Key={'sessionId': session_id},
+                      UpdateExpression=update_expression,
+                      ExpressionAttributeValues=expression_values
+                  )
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Access-Control-Allow-Headers': 'Content-Type',
+                          'Access-Control-Allow-Methods': 'PUT,OPTIONS'
+                      },
+                      'body': json.dumps({
+                          'message': 'Patient details updated successfully',
+                          'sessionId': session_id
+                      })
+                  }
+                  
+              except Exception as e:
+                  print(f"Error updating patient details: {str(e)}")
+                  return {
+                      'statusCode': 500,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Access-Control-Allow-Headers': 'Content-Type',
+                          'Access-Control-Allow-Methods': 'PUT,OPTIONS'
+                      },
+                      'body': json.dumps({'error': str(e)})
+                  }
+      Environment:
+        Variables:
+          CASES_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-CasesTable'
+
+  UpdatePatientDetailsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref CasePatientsResource
+      HttpMethod: PUT
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UpdatePatientDetailsFunction.Arn}/invocations'
+
+  UpdatePatientDetailsMethodOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref CasePatientsResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'PUT,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # ========================================
+  # POST /failures/resolve
+  # ========================================
+  ResolveFailureFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: IVF-ResolveFailure
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role:
+        Fn::ImportValue: !Sub '${LambdaStackName}-LambdaRoleArn'
+      Timeout: 30
+      MemorySize: 256
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          from datetime import datetime
+          import os
+          from boto3.dynamodb.conditions import Key
+          
+          dynamodb = boto3.resource('dynamodb')
+          failures_table = dynamodb.Table(os.environ['FAILURES_TABLE'])
+          cases_table = dynamodb.Table(os.environ['CASES_TABLE'])
+          
+          def lambda_handler(event, context):
+              try:
+                  body = json.loads(event['body'])
+                  
+                  session_id = body['sessionId']
+                  stage = body['stage']
+                  resolution_category = body.get('resolution_category', '')
+                  resolution_notes = body.get('resolution_notes', '')
+                  resolved_by_user = body.get('resolved_by_user', 'system')
+                  
+                  print(f"Resolving failure for session {session_id}, stage {stage}")
+                  
+                  # Find the active failure record for this session and stage
+                  response = failures_table.query(
+                      IndexName='SessionIdIndex',
+                      KeyConditionExpression=Key('sessionId').eq(session_id)
+                  )
+                  
+                  failures = [f for f in response.get('Items', []) 
+                             if f.get('stage') == stage and f.get('status') == 'active']
+                  
+                  if not failures:
+                      print(f"No active failure found for session {session_id}, stage {stage}")
+                      return {
+                          'statusCode': 404,
+                          'headers': {
+                              'Content-Type': 'application/json',
+                              'Access-Control-Allow-Origin': '*',
+                              'Access-Control-Allow-Headers': 'Content-Type',
+                              'Access-Control-Allow-Methods': 'POST,OPTIONS'
+                          },
+                          'body': json.dumps({'message': 'No active failure found'})
+                      }
+                  
+                  # Get the most recent failure
+                  failure = sorted(failures, key=lambda x: x['failed_at'], reverse=True)[0]
+                  failure_id = failure['failureId']
+                  failed_at = failure['failed_at']
+                  
+                  # Calculate resolution time
+                  resolved_at = datetime.utcnow().isoformat()
+                  failed_time = datetime.fromisoformat(failed_at.replace('Z', '+00:00'))
+                  resolved_time = datetime.fromisoformat(resolved_at)
+                  resolution_time_minutes = int((resolved_time - failed_time).total_seconds() / 60)
+                  
+                  # Update the failure record
+                  failures_table.update_item(
+                      Key={'failureId': failure_id},
+                      UpdateExpression="""
+                          SET #status = :status,
+                              resolved_at = :resolved_at,
+                              resolution_time_minutes = :resolution_time,
+                              resolution_category = :category,
+                              resolution_notes = :notes,
+                              resolved_by_user = :user,
+                              updated_at = :updated_at
+                      """,
+                      ExpressionAttributeNames={
+                          '#status': 'status'
+                      },
+                      ExpressionAttributeValues={
+                          ':status': 'resolved',
+                          ':resolved_at': resolved_at,
+                          ':resolution_time': resolution_time_minutes,
+                          ':category': resolution_category,
+                          ':notes': resolution_notes,
+                          ':user': resolved_by_user,
+                          ':updated_at': resolved_at
+                      }
+                  )
+                  
+                  print(f"Updated failure record {failure_id} with resolution info")
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*',
+                          'Access-Control-Allow-Headers': 'Content-Type',
+                          'Access-Control-Allow-Methods': 'POST,OPTIONS'
+                      },
+                      'body': json.dumps({
+                          'message': 'Failure resolved successfully',
+                          'failureId': failure_id,
+                          'resolution_time_minutes': resolution_time_minutes
+                      })
+                  }
+                  
+              except Exception as e:
+                  print(f"Error resolving failure: {str(e)}")
+                  import traceback
+                  traceback.print_exc()
+                  
+                  return {
+                      'statusCode': 500,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*',
+                          'Access-Control-Allow-Headers': 'Content-Type',
+                          'Access-Control-Allow-Methods': 'POST,OPTIONS'
+                      },
+                      'body': json.dumps({
+                          'error': 'Internal server error',
+                          'message': str(e)
+                      })
+                  }
+      Environment:
+        Variables:
+          FAILURES_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-ValidationFailuresTable'
+          CASES_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-CasesTable'
+
+  ResolveFailureMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref FailuresResolveResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ResolveFailureFunction.Arn}/invocations'
+
+  ResolveFailureMethodOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref FailuresResolveResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # ========================================
+  # GET /metrics
+  # ========================================
+  GetMetricsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: IVF-GetMetrics
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role:
+        Fn::ImportValue: !Sub '${LambdaStackName}-LambdaRoleArn'
+      Timeout: 30
+      MemorySize: 512
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          from datetime import datetime, timedelta
+          from collections import defaultdict
+          import os
+          
+          dynamodb = boto3.resource('dynamodb')
+          failures_table = dynamodb.Table(os.environ['FAILURES_TABLE'])
+          
+          STAGE_NAMES = {
+              'label_validation': 'Label Validation',
+              'oocyte_collection': 'Oocyte Collection',
+              'denudation': 'Denudation',
+              'male_sample_collection': 'Male Sample Collection',
+              'icsi': 'ICSI',
+              'culture': 'Culture'
+          }
+          
+          def lambda_handler(event, context):
+              try:
+                  params = event.get('queryStringParameters') or {}
+                  stage_filter = params.get('stage', 'all')
+                  status_filter = params.get('status', 'all')
+                  date_range = params.get('dateRange', '30')
+                  custom_start = params.get('customStartDate')
+                  custom_end = params.get('customEndDate')
+                  
+                  print(f"Fetching metrics: stage={stage_filter}, status={status_filter}, dateRange={date_range}")
+                  
+                  response = failures_table.scan()
+                  all_failures = response.get('Items', [])
+                  
+                  while 'LastEvaluatedKey' in response:
+                      response = failures_table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                      all_failures.extend(response.get('Items', []))
+                  
+                  print(f"Found {len(all_failures)} total failures")
+                  
+                  filtered_failures = apply_filters(all_failures, stage_filter, status_filter, date_range, custom_start, custom_end)
+                  print(f"After filtering: {len(filtered_failures)} failures")
+                  
+                  metrics = calculate_metrics(filtered_failures)
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'
+                      },
+                      'body': json.dumps(metrics, default=str)
+                  }
+                  
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  import traceback
+                  traceback.print_exc()
+                  return {
+                      'statusCode': 500,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'
+                      },
+                      'body': json.dumps({'error': str(e)})
+                  }
+          
+          def apply_filters(failures, stage_filter, status_filter, date_range, custom_start=None, custom_end=None):
+              filtered = failures
+              if stage_filter != 'all':
+                  filtered = [f for f in filtered if f.get('stage') == stage_filter]
+              if status_filter != 'all':
+                  filtered = [f for f in filtered if f.get('status') == status_filter]
+              if date_range == 'custom' and custom_start and custom_end:
+                  start_date = datetime.fromisoformat(custom_start.replace('Z', '+00:00'))
+                  end_date = datetime.fromisoformat(custom_end.replace('Z', '+00:00'))
+                  filtered = [f for f in filtered if start_date <= datetime.fromisoformat(f.get('failed_at', '').replace('Z', '+00:00')) <= end_date]
+              elif date_range != 'all':
+                  days = float(date_range)
+                  cutoff_date = datetime.utcnow() - timedelta(days=days)
+                  filtered = [f for f in filtered if datetime.fromisoformat(f.get('failed_at', '').replace('Z', '+00:00')) > cutoff_date]
+              return filtered
+          
+          def calculate_metrics(filtered_failures):
+              total = len(filtered_failures)
+              active = len([f for f in filtered_failures if f.get('status') == 'active'])
+              resolved = len([f for f in filtered_failures if f.get('status') == 'resolved'])
+              failure_rate = round((total / max(total * 10, 1)) * 100, 1) if total > 0 else 0
+              
+              overview = {'total': total, 'active': active, 'resolved': resolved, 'failureRate': failure_rate}
+              
+              by_stage = defaultdict(int)
+              for failure in filtered_failures:
+                  by_stage[failure.get('stage', 'unknown')] += 1
+              by_stage_list = [{'stage': STAGE_NAMES.get(s, s), 'count': c} for s, c in sorted(by_stage.items(), key=lambda x: x[1], reverse=True)]
+              
+              by_reason = defaultdict(int)
+              for failure in filtered_failures:
+                  by_reason[failure.get('primary_mismatch_reason', 'Unknown')] += 1
+              total_reasons = sum(by_reason.values())
+              by_reason_list = [{'reason': r, 'count': c, 'percentage': round((c / total_reasons) * 100, 1) if total_reasons > 0 else 0} for r, c in sorted(by_reason.items(), key=lambda x: x[1], reverse=True)]
+              
+              by_resolution = defaultdict(int)
+              for failure in filtered_failures:
+                  if failure.get('status') == 'resolved' and failure.get('resolution_category'):
+                      by_resolution[failure['resolution_category']] += 1
+              by_resolution_list = [{'category': c, 'count': cnt} for c, cnt in sorted(by_resolution.items(), key=lambda x: x[1], reverse=True)]
+              
+              failures_list = sorted(filtered_failures, key=lambda x: x.get('failed_at', ''), reverse=True)[:50]
+              
+              return {
+                  'overview': overview,
+                  'byStage': by_stage_list,
+                  'byReason': by_reason_list,
+                  'byResolution': by_resolution_list,
+                  'failures': failures_list
+              }
+      Environment:
+        Variables:
+          FAILURES_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-ValidationFailuresTable'
+
+  GetMetricsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref MetricsResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetMetricsFunction.Arn}/invocations'
+
+  GetMetricsMethodOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref MetricsResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # ========================================
+  # GET /metrics/export
+  # ========================================
+  ExportMetricsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: IVF-ExportMetrics
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role:
+        Fn::ImportValue: !Sub '${LambdaStackName}-LambdaRoleArn'
+      Timeout: 30
+      MemorySize: 512
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          from datetime import datetime, timedelta
+          import os
+          import csv
+          from io import StringIO
+          
+          dynamodb = boto3.resource('dynamodb')
+          failures_table = dynamodb.Table(os.environ['FAILURES_TABLE'])
+          
+          def lambda_handler(event, context):
+              try:
+                  params = event.get('queryStringParameters') or {}
+                  stage_filter = params.get('stage', 'all')
+                  status_filter = params.get('status', 'all')
+                  date_range = params.get('dateRange', '30')
+                  custom_start = params.get('customStartDate')
+                  custom_end = params.get('customEndDate')
+                  
+                  response = failures_table.scan()
+                  all_failures = response.get('Items', [])
+                  
+                  while 'LastEvaluatedKey' in response:
+                      response = failures_table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                      all_failures.extend(response.get('Items', []))
+                  
+                  filtered_failures = apply_filters(all_failures, stage_filter, status_filter, date_range, custom_start, custom_end)
+                  
+                  csv_data = generate_csv(filtered_failures)
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Content-Type': 'text/csv',
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Disposition': f'attachment; filename="validation-failures-{datetime.utcnow().strftime("%Y%m%d")}.csv"'
+                      },
+                      'body': csv_data
+                  }
+                  
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  import traceback
+                  traceback.print_exc()
+                  return {
+                      'statusCode': 500,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'
+                      },
+                      'body': json.dumps({'error': str(e)})
+                  }
+          
+          def apply_filters(failures, stage_filter, status_filter, date_range, custom_start=None, custom_end=None):
+              filtered = failures
+              if stage_filter != 'all':
+                  filtered = [f for f in filtered if f.get('stage') == stage_filter]
+              if status_filter != 'all':
+                  filtered = [f for f in filtered if f.get('status') == status_filter]
+              if date_range == 'custom' and custom_start and custom_end:
+                  start_date = datetime.fromisoformat(custom_start.replace('Z', '+00:00'))
+                  end_date = datetime.fromisoformat(custom_end.replace('Z', '+00:00'))
+                  filtered = [f for f in filtered if start_date <= datetime.fromisoformat(f.get('failed_at', '').replace('Z', '+00:00')) <= end_date]
+              elif date_range != 'all':
+                  days = float(date_range)
+                  cutoff_date = datetime.utcnow() - timedelta(days=days)
+                  filtered = [f for f in filtered if datetime.fromisoformat(f.get('failed_at', '').replace('Z', '+00:00')) > cutoff_date]
+              return filtered
+          
+          def generate_csv(failures):
+              output = StringIO()
+              writer = csv.writer(output)
+              
+              writer.writerow([
+                  'Failure ID', 'Session ID', 'Stage', 'Failed At', 'Status',
+                  'Primary Mismatch Reason', 'Mismatch Details', 'Resolution Category',
+                  'Resolution Notes', 'Resolved At', 'Resolution Time (min)', 'Resolved By'
+              ])
+              
+              for failure in sorted(failures, key=lambda x: x.get('failed_at', ''), reverse=True):
+                  writer.writerow([
+                      failure.get('failureId', ''),
+                      failure.get('sessionId', ''),
+                      failure.get('stage', ''),
+                      failure.get('failed_at', ''),
+                      failure.get('status', ''),
+                      failure.get('primary_mismatch_reason', ''),
+                      json.dumps(failure.get('mismatch_details', {})),
+                      failure.get('resolution_category', ''),
+                      failure.get('resolution_notes', ''),
+                      failure.get('resolved_at', ''),
+                      failure.get('resolution_time_minutes', ''),
+                      failure.get('resolved_by_user', '')
+                  ])
+              
+              return output.getvalue()
+      Environment:
+        Variables:
+          FAILURES_TABLE:
+            Fn::ImportValue: !Sub '${DynamoDBStackName}-ValidationFailuresTable'
+
+  ExportMetricsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref MetricsExportResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ExportMetricsFunction.Arn}/invocations'
+
+  ExportMetricsMethodOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref MetricsExportResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # ========================================
+  # GET /models
+  # ========================================
+  GetModelsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: IVF-GetModels
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role:
+        Fn::ImportValue: !Sub '${LambdaStackName}-LambdaRoleArn'
+      Timeout: 10
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json
+          
+          def lambda_handler(event, context):
+              models = [
+                  {
+                      "provider": "Anthropic Claude (Recommended)",
+                      "models": [
+                          {"id": "anthropic.claude-sonnet-4-5-20250929-v1:0", "name": "Claude Sonnet 4.5 ⭐", "badge": "Best"},
+                          {"id": "anthropic.claude-opus-4-5-20251101-v1:0", "name": "Claude Opus 4.5", "badge": "Premium"},
+                          {"id": "anthropic.claude-haiku-4-5-20251001-v1:0", "name": "Claude Haiku 4.5", "badge": "Fast"},
+                          {"id": "anthropic.claude-3-7-sonnet-20250219-v1:0", "name": "Claude 3.7 Sonnet"},
+                          {"id": "anthropic.claude-sonnet-4-20250514-v1:0", "name": "Claude Sonnet 4"},
+                          {"id": "anthropic.claude-3-5-sonnet-20241022-v2:0", "name": "Claude 3.5 Sonnet v2"}
+                      ]
+                  },
+                  {
+                      "provider": "Amazon Nova",
+                      "models": [
+                          {"id": "amazon.nova-pro-v1:0", "name": "Nova Pro ⭐", "badge": "Balanced"},
+                          {"id": "amazon.nova-2-lite-v1:0", "name": "Nova 2 Lite", "badge": "Latest"},
+                          {"id": "amazon.nova-lite-v1:0", "name": "Nova Lite", "badge": "Economical"}
+                      ]
+                  },
+                  {
+                      "provider": "Mistral AI",
+                      "models": [
+                          {"id": "mistral.mistral-large-3-675b-instruct", "name": "Mistral Large 3"},
+                          {"id": "mistral.magistral-small-2509", "name": "Magistral Small 2509"},
+                          {"id": "mistral.ministral-3-14b-instruct", "name": "Ministral 14B", "badge": "Good Value"},
+                          {"id": "mistral.ministral-3-8b-instruct", "name": "Ministral 8B"},
+                          {"id": "mistral.ministral-3-3b-instruct", "name": "Ministral 3B", "badge": "Fastest"}
+                      ]
+                  },
+                  {
+                      "provider": "Google Gemma",
+                      "models": [
+                          {"id": "google.gemma-3-27b-it", "name": "Gemma 3 27B"},
+                          {"id": "google.gemma-3-12b-it", "name": "Gemma 3 12B"},
+                          {"id": "google.gemma-3-4b-it", "name": "Gemma 3 4B", "badge": "Economical"}
+                      ]
+                  }
+              ]
+              
+              return {
+                  'statusCode': 200,
+                  'headers': {
+                      'Content-Type': 'application/json',
+                      'Access-Control-Allow-Origin': '*'
+                  },
+                  'body': json.dumps(models)
+              }
+
+  GetModelsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref ModelsResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetModelsFunction.Arn}/invocations'
+
+  GetModelsMethodOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref ModelsResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # ========================================
+  # GET /sessions
+  # ========================================
+  GetSessionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref SessionsResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaArn}/invocations'
+          - LambdaArn:
+              Fn::ImportValue: !Sub '${LambdaStackName}-ListSessionsArn'
+
+  GetSessionsMethodOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      ResourceId: !Ref SessionsResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # ========================================
+  # Lambda Permissions
+  # ========================================
+  RegisterLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::ImportValue: !Sub '${LambdaStackName}-RegistrationHandlerArn'
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${IVFWitnessCaptureAPI}/*'
+
+  PresignedUrlLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::ImportValue: !Sub '${LambdaStackName}-PresignedUrlGeneratorArn'
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${IVFWitnessCaptureAPI}/*'
+
+  GetCaseLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt GetCaseFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${IVFWitnessCaptureAPI}/*'
+
+  GetStageLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt GetStageFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${IVFWitnessCaptureAPI}/*'
+
+  GetModelsLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt GetModelsFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${IVFWitnessCaptureAPI}/*'
+
+  UpdatePatientDetailsLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt UpdatePatientDetailsFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${IVFWitnessCaptureAPI}/*'
+
+  ResolveFailureLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ResolveFailureFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${IVFWitnessCaptureAPI}/*'
+
+  GetMetricsLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt GetMetricsFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${IVFWitnessCaptureAPI}/*'
+
+  ExportMetricsLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ExportMetricsFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${IVFWitnessCaptureAPI}/*'
+
+  GetSessionsLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::ImportValue: !Sub '${LambdaStackName}-ListSessionsArn'
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${IVFWitnessCaptureAPI}/*'
+
+  # ========================================
+  # API Gateway Deployment
+  # ========================================
+  APIDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - RegisterMethod
+      - RegisterMethodOptions
+      - PresignedUrlMethod
+      - PresignedUrlMethodOptions
+      - GetCaseMethod
+      - GetCaseMethodOptions
+      - GetStageMethod
+      - GetStageMethodOptions
+      - GetModelsMethod
+      - GetModelsMethodOptions
+      - UpdatePatientDetailsMethod
+      - UpdatePatientDetailsMethodOptions
+      - ResolveFailureMethod
+      - ResolveFailureMethodOptions
+      - GetMetricsMethod
+      - GetMetricsMethodOptions
+      - ExportMetricsMethod
+      - ExportMetricsMethodOptions
+      - GetSessionsMethod
+      - GetSessionsMethodOptions
+    Properties:
+      RestApiId: !Ref IVFWitnessCaptureAPI
+      StageName: prod
+
+Outputs:
+  APIEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${IVFWitnessCaptureAPI}.execute-api.${AWS::Region}.amazonaws.com/prod'
+    Export:
+      Name: !Sub '${AWS::StackName}-APIEndpoint'
+
+  APIId:
+    Description: API Gateway ID
+    Value: !Ref IVFWitnessCaptureAPI
+    Export:
+      Name: !Sub '${AWS::StackName}-APIId'
+
+  GetCaseFunctionArn:
+    Description: Get Case Lambda ARN
+    Value: !GetAtt GetCaseFunction.Arn
+
+  GetStageFunctionArn:
+    Description: Get Stage Lambda ARN
+    Value: !GetAtt GetStageFunction.Arn
+
+  GetModelsFunctionArn:
+    Description: Get Models Lambda ARN
+    Value: !GetAtt GetModelsFunction.Arn
+
+  UpdatePatientDetailsFunctionArn:
+    Description: Update Patient Details Lambda ARN
+    Value: !GetAtt UpdatePatientDetailsFunction.Arn

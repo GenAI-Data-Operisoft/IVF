@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.npm/
+
+# Build output
+build/
+dist/
+
+# Environment & credentials - NEVER COMMIT THESE
+.env
+.env.local
+.env.production
+.env.development
+*.env
+aws-config.js
+config.js
+
+# AWS credentials
+.aws/
+credentials
+*.pem
+*.key
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Zip files
+*.zip
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo

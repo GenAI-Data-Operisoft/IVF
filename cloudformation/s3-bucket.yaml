@@ -1,0 +1,108 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IVF Witness Capture - S3 Bucket for Artifacts'
+
+Resources:
+  # ========================================
+  # S3 Bucket for Image Artifacts
+  # ========================================
+  IVFArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'c9-ivf-witness-capture-artifacts-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToGlacierAfter90Days
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+            ExpirationInDays: 2555  # 7 years retention
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - PUT
+              - POST
+              - GET
+            AllowedOrigins:
+              - '*'  # Will be restricted to CloudFront domain in production
+            MaxAge: 3000
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+      Tags:
+        - Key: Application
+          Value: FMS-IVF-WitnessCapture
+        - Key: Environment
+          Value: Development
+        - Key: DataClassification
+          Value: Sensitive-PHI
+
+  # ========================================
+  # S3 Bucket Policy
+  # ========================================
+  IVFArtifactsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref IVFArtifactsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyUnencryptedObjectUploads
+            Effect: Deny
+            Principal: '*'
+            Action: s3:PutObject
+            Resource: !Sub '${IVFArtifactsBucket.Arn}/*'
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption: AES256
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt IVFArtifactsBucket.Arn
+              - !Sub '${IVFArtifactsBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+Outputs:
+  BucketName:
+    Description: S3 bucket name for IVF artifacts
+    Value: !Ref IVFArtifactsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketName'
+
+  BucketArn:
+    Description: S3 bucket ARN
+    Value: !GetAtt IVFArtifactsBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketArn'
+
+  BucketDomainName:
+    Description: S3 bucket domain name
+    Value: !GetAtt IVFArtifactsBucket.DomainName
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketDomainName'
+
+  FolderStructure:
+    Description: Expected folder structure in bucket
+    Value: |
+      male-sample-collection/{sessionId}/
+      oocyte-collection/{sessionId}/
+      denudation/{sessionId}/
+      icsi/{sessionId}/
+      culture/{sessionId}/

@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DynamoDB table for tracking validation failures and resolutions'
+
+Resources:
+  ValidationFailuresTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: IVF-ValidationFailures
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: failureId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+        - AttributeName: stage
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: failed_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: failureId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: SessionIdIndex
+          KeySchema:
+            - AttributeName: sessionId
+              KeyType: HASH
+            - AttributeName: failed_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: StageIndex
+          KeySchema:
+            - AttributeName: stage
+              KeyType: HASH
+            - AttributeName: failed_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: StatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: failed_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Application
+          Value: IVF-Witness-Capture
+        - Key: Purpose
+          Value: Validation-Failure-Tracking
+
+Outputs:
+  TableName:
+    Description: Name of the validation failures table
+    Value: !Ref ValidationFailuresTable
+    Export:
+      Name: IVF-ValidationFailures-TableName
+  
+  TableArn:
+    Description: ARN of the validation failures table
+    Value: !GetAtt ValidationFailuresTable.Arn
+    Export:
+      Name: IVF-ValidationFailures-TableArn
+
+  ValidationFailuresTable:
+    Description: Validation Failures Table Name (for API Gateway stack)
+    Value: !Ref ValidationFailuresTable
+    Export:
+      Name: fms-ivf-witness-capture-dynamodb-ValidationFailuresTable

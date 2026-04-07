@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IVF Witness Capture - Audit Log Table'
+
+Resources:
+  # ========================================
+  # Audit Log Table
+  # ========================================
+  IVFAuditLogTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: IVF-AuditLog
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: auditId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+        - AttributeName: action
+          AttributeType: S
+        - AttributeName: patientMPEID
+          AttributeType: S
+      KeySchema:
+        - AttributeName: auditId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        # Query by user
+        - IndexName: UserIdIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # Query by session
+        - IndexName: SessionIdIndex
+          KeySchema:
+            - AttributeName: sessionId
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # Query by action type
+        - IndexName: ActionIndex
+          KeySchema:
+            - AttributeName: action
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # Query by patient
+        - IndexName: PatientIndex
+          KeySchema:
+            - AttributeName: patientMPEID
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      StreamSpecification:
+        StreamViewType: NEW_IMAGE
+      Tags:
+        - Key: Application
+          Value: FMS-IVF-WitnessCapture
+        - Key: Purpose
+          Value: AuditLogging
+        - Key: Environment
+          Value: Development
+
+Outputs:
+  AuditLogTableName:
+    Description: Audit Log table name
+    Value: !Ref IVFAuditLogTable
+    Export:
+      Name: !Sub '${AWS::StackName}-AuditLogTable'
+
+  AuditLogTableArn:
+    Description: Audit Log table ARN
+    Value: !GetAtt IVFAuditLogTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AuditLogTableArn'
+
+  AuditLogTableStreamArn:
+    Description: Audit Log table stream ARN
+    Value: !GetAtt IVFAuditLogTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-AuditLogTableStreamArn'
