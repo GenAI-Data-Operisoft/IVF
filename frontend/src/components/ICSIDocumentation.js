@@ -1,3 +1,6 @@
+/**
+ * ICSI Documentation — captures and displays AI-annotated microscope images of injected oocytes.
+ */
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 

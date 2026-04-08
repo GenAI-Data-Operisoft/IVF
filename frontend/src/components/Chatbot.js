@@ -1,3 +1,6 @@
+/**
+ * Chatbot — AI assistant for staff queries about the IVF system.
+ */
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../api';
 

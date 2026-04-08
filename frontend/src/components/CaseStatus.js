@@ -1,3 +1,6 @@
+/**
+ * Case Status — shows all 7 IVF stage statuses, patient details, and validation results for a session.
+ */
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import { STAGES } from '../config';

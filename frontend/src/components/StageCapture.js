@@ -1,3 +1,6 @@
+/**
+ * Stage Capture — handles image upload, AI processing, and validation result display for each IVF stage.
+ */
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import { STAGES } from '../config';

@@ -1,3 +1,6 @@
+/**
+ * Home screen — displays the 4 main navigation cards based on user role permissions.
+ */
 import React from 'react';
 import usePermissionStore from '../store/permissionStore';
 

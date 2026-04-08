@@ -1,3 +1,6 @@
+/**
+ * Registration Form — collects male and female patient details to start a new IVF case.
+ */
 import React, { useState } from 'react';
 import { api } from '../api';
 

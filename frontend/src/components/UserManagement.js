@@ -1,3 +1,6 @@
+/**
+ * User Management — create, edit, and assign roles to staff users. Admin only.
+ */
 import { useState, useEffect } from 'react';
 import { api } from '../api';
 

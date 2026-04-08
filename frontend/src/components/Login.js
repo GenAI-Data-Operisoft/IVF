@@ -1,3 +1,6 @@
+/**
+ * Login — Cognito-based authentication with first-time password change support.
+ */
 import React, { useState, useEffect } from 'react';
 import { signIn, getCurrentUser } from 'aws-amplify/auth';
 import { useNavigate, Link } from 'react-router-dom';

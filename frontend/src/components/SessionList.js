@@ -1,3 +1,6 @@
+/**
+ * Session List — searchable list of all IVF witness capture sessions, filterable by MPEID.
+ */
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 

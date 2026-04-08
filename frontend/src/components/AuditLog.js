@@ -1,3 +1,6 @@
+/**
+ * Audit Log — displays filterable system activity log with LLM result indicators. Admin/Supervisor only.
+ */
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import './AuditLog.css';

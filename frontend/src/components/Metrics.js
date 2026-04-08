@@ -1,3 +1,6 @@
+/**
+ * Validation Metrics — analytics dashboard showing failure rates, resolution tracking, and export.
+ */
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 
