@@ -214,6 +214,24 @@ export const api = {
     return response.text();
   },
 
+  // Scans a patient label or wristband image using Bedrock OCR and returns
+  // extracted fields (name, last_name, mpeid, dob) to auto-fill the registration form.
+  scanPatientLabel: async (imageFile, patientType, modelId) => {
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(imageFile);
+    });
+    const response = await fetch(`${API_BASE_URL}/scan-patient-label`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64, patient_type: patientType, model_id: modelId })
+    });
+    if (!response.ok) throw new Error('Failed to scan label');
+    return response.json();
+  },
+
   // Chatbot
   chat: async (question) => {
     const response = await fetch(`${API_BASE_URL}/chat`, {

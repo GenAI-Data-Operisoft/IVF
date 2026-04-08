@@ -15,11 +15,30 @@ import json
 import boto3
 import base64
 import os
+import io
 
 bedrock_client = boto3.client('bedrock-runtime', region_name=os.environ.get('REGION', 'ap-south-1'))
 
-# Default model used for registration scanning
 DEFAULT_MODEL_ID = os.environ.get('DEFAULT_MODEL_ID', 'qwen.qwen3-vl-235b-a22b')
+
+
+def normalize_image_to_jpeg(image_bytes):
+    """
+    Converts any image format to JPEG bytes using Pillow.
+    Qwen via Bedrock Converse API requires a valid JPEG or PNG.
+    """
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(image_bytes))
+        # Convert to RGB (removes alpha channel if PNG with transparency)
+        if img.mode in ('RGBA', 'P', 'LA'):
+            img = img.convert('RGB')
+        output = io.BytesIO()
+        img.save(output, format='JPEG', quality=85)
+        return output.getvalue()
+    except Exception as e:
+        print(f"Image conversion warning: {str(e)} — using original bytes")
+        return image_bytes
 
 
 def lambda_handler(event, context):
@@ -27,10 +46,34 @@ def lambda_handler(event, context):
     Accepts a base64-encoded image and patient type (male/female),
     sends it to Bedrock for OCR, and returns the extracted fields.
     """
+    # Handle CORS preflight request sent by the browser before the actual POST
+    if event.get('httpMethod') == 'OPTIONS':
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'POST,OPTIONS'
+            },
+            'body': ''
+        }
+
     try:
-        body = json.loads(event['body'])
+        print(f"Event keys: {list(event.keys())}")
+
+        # Handle both API Gateway (body as string) and direct invocation (body as dict)
+        raw_body = event.get('body', event)
+        if isinstance(raw_body, str):
+            body = json.loads(raw_body)
+        elif isinstance(raw_body, dict):
+            body = raw_body
+        else:
+            body = event
+
+        print(f"Patient type: {body.get('patient_type')}, model: {body.get('model_id')}")
+
         image_base64 = body.get('image')
-        patient_type = body.get('patient_type', 'male')  # 'male' or 'female'
+        patient_type = body.get('patient_type', 'male')
         model_id = body.get('model_id', DEFAULT_MODEL_ID)
 
         if not image_base64:
@@ -40,10 +83,14 @@ def lambda_handler(event, context):
                 'body': json.dumps({'error': 'Missing image data'})
             }
 
-        # Decode the base64 image
-        image_bytes = base64.b64decode(image_base64)
+        print(f"Image base64 length: {len(image_base64)}")
 
-        # Build the prompt based on which patient we are scanning
+        # Decode base64 and normalize to JPEG
+        raw_bytes = base64.b64decode(image_base64)
+        print(f"Decoded image size: {len(raw_bytes)} bytes")
+        image_bytes = normalize_image_to_jpeg(raw_bytes)
+        print(f"Normalized image size: {len(image_bytes)} bytes")
+
         if patient_type == 'male':
             extraction_instruction = "Extract the MALE patient's information from this label or wristband."
         else:
@@ -65,9 +112,9 @@ Rules:
 - If a field cannot be read clearly, set it to null
 - Names should be uppercase
 - MPEID should include the ID- prefix if visible on the label
+- If you see "10-" followed by numbers, it is actually "ID-" (common OCR mistake)
 """
 
-        # Call Bedrock using the Converse API (works with Qwen and Claude models)
         response = bedrock_client.converse(
             modelId=model_id,
             messages=[
@@ -90,19 +137,22 @@ Rules:
             ],
             inferenceConfig={
                 'maxTokens': 200,
-                'temperature': 0.1  # Low temperature for consistent extraction
+                'temperature': 0.1
             }
         )
 
-        # Extract the text response from Bedrock
         response_text = response['output']['message']['content'][0]['text'].strip()
 
-        # Parse the JSON from the response
-        # Sometimes the model wraps it in markdown code blocks, so we clean that
+        # Strip markdown code blocks if the model wrapped the JSON
         if '```' in response_text:
-            response_text = response_text.split('```')[1]
-            if response_text.startswith('json'):
-                response_text = response_text[4:]
+            parts = response_text.split('```')
+            for part in parts:
+                part = part.strip()
+                if part.startswith('json'):
+                    part = part[4:].strip()
+                if part.startswith('{'):
+                    response_text = part
+                    break
 
         extracted = json.loads(response_text.strip())
 
@@ -119,8 +169,7 @@ Rules:
         }
 
     except json.JSONDecodeError as e:
-        # Bedrock returned something that could not be parsed as JSON
-        print(f"JSON parse error: {str(e)}, response was: {response_text if 'response_text' in locals() else 'N/A'}")
+        print(f"JSON parse error: {str(e)}")
         return {
             'statusCode': 200,
             'headers': {'Access-Control-Allow-Origin': '*'},
@@ -139,3 +188,5 @@ Rules:
             'headers': {'Access-Control-Allow-Origin': '*'},
             'body': json.dumps({'error': str(e)})
         }
+
+
