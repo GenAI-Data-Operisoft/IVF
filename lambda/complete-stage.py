@@ -1,3 +1,15 @@
+"""
+complete-stage.py
+
+Marks a specific IVF stage as completed for a given session. Called by the
+frontend after the user confirms they are done with a stage (for example,
+after ICSI documentation images have been captured). Updates the stage status
+and records the completion timestamp in DynamoDB.
+
+Trigger: POST /complete-stage (API Gateway, Cognito authenticated)
+Table:   IVF-Cases (DynamoDB)
+"""
+
 import json
 import boto3
 import os
@@ -6,16 +18,20 @@ from datetime import datetime
 dynamodb = boto3.resource('dynamodb')
 cases_table = dynamodb.Table(os.environ.get('CASES_TABLE', 'IVF-Cases'))
 
+
 def lambda_handler(event, context):
     """
-    Mark a stage as completed
+    Reads sessionId and stage from the request body, then updates the
+    stage status to 'completed' and records when it was completed.
     """
     try:
         body = json.loads(event['body'])
         session_id = body['sessionId']
         stage = body['stage']
-        
-        # Update stage status to completed
+
+        # Update the stage status to completed and record the timestamp.
+        # ExpressionAttributeNames is required because 'status' is a reserved
+        # word in DynamoDB expression syntax.
         cases_table.update_item(
             Key={'sessionId': session_id},
             UpdateExpression='SET stages.#stage.#status = :status, stages.#stage.#completed_at = :completed_at',
@@ -29,7 +45,7 @@ def lambda_handler(event, context):
                 ':completed_at': datetime.utcnow().isoformat()
             }
         )
-        
+
         return {
             'statusCode': 200,
             'headers': {
@@ -42,7 +58,7 @@ def lambda_handler(event, context):
                 'stage': stage
             })
         }
-        
+
     except Exception as e:
         print(f"Error: {str(e)}")
         import traceback

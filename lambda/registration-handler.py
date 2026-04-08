@@ -1,3 +1,15 @@
+"""
+registration-handler.py
+
+Handles new IVF case registration. Called when a nurse starts a new witness
+capture session. Creates the case record in DynamoDB with patient details,
+initializes all 7 stage statuses to pending, and logs the registration event
+to the audit table.
+
+Trigger: POST /register (API Gateway, Cognito authenticated)
+Table:   IVF-Cases (DynamoDB)
+"""
+
 import json
 import boto3
 import uuid
@@ -8,14 +20,16 @@ from audit_helper import log_audit, extract_user_info, ACTIONS
 dynamodb = boto3.resource('dynamodb')
 cases_table = dynamodb.Table(os.environ.get('CASES_TABLE', 'IVF-Cases'))
 
+
 def lambda_handler(event, context):
     """
-    Register new IVF case with patient details
+    Main handler. Validates the request body, creates the case record,
+    and returns the new session ID to the frontend.
     """
     try:
         body = json.loads(event['body'])
-        
-        # Validate required fields
+
+        # Make sure all required fields are present before proceeding
         required_fields = ['male_patient', 'female_patient', 'procedure_start_date']
         for field in required_fields:
             if field not in body:
@@ -24,11 +38,12 @@ def lambda_handler(event, context):
                     'headers': {'Content-Type': 'application/json'},
                     'body': json.dumps({'error': f'Missing required field: {field}'})
                 }
-        
-        # Generate unique session ID
+
+        # Each case gets a unique UUID as its session identifier
         session_id = str(uuid.uuid4())
-        
-        # Prepare case record
+
+        # Build the full case record that will be stored in DynamoDB.
+        # Names are stored in uppercase to make comparison consistent during validation.
         case_record = {
             'sessionId': session_id,
             'male_patient': {
@@ -44,22 +59,26 @@ def lambda_handler(event, context):
                 'last_name': body['female_patient'].get('last_name', '').upper()
             },
             'procedure_start_date': body['procedure_start_date'],
+            # The AI model used for OCR validation is selected at registration time
             'model_config': body.get('model_config', {
                 'model_id': 'anthropic.claude-sonnet-4-5-20250929-v1:0',
                 'model_name': 'Claude Sonnet 4.5'
             }),
             'created_at': datetime.utcnow().isoformat(),
             'current_stage': 'label_validation',
+            # All 7 stages start as pending. male_sample_collection requires 2 images
+            # (one for each patient side of the tube), all others require 1.
             'stages': {
-                'label_validation': {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
-                'oocyte_collection': {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
-                'denudation': {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
-                'male_sample_collection': {'status': 'pending', 'images_required': 2, 'images_uploaded': 0},
-                'icsi': {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
-                'icsi_documentation': {'status': 'pending', 'images_required': 0, 'images_uploaded': 0},
-                'culture': {'status': 'pending', 'images_required': 1, 'images_uploaded': 0}
+                'label_validation':      {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
+                'oocyte_collection':     {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
+                'denudation':            {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
+                'male_sample_collection':{'status': 'pending', 'images_required': 2, 'images_uploaded': 0},
+                'icsi':                  {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
+                'icsi_documentation':    {'status': 'pending', 'images_required': 0, 'images_uploaded': 0},
+                'culture':               {'status': 'pending', 'images_required': 1, 'images_uploaded': 0}
             },
-            # Initialize token tracking fields
+            # Token usage fields are initialized to zero and updated after each AI call.
+            # These are used to track cost per stage and total cost per case.
             'label_validation_input_tokens': 0,
             'label_validation_output_tokens': 0,
             'label_validation_cost_usd': 0,
@@ -82,11 +101,11 @@ def lambda_handler(event, context):
             'total_output_tokens': 0,
             'total_cost_usd': 0
         }
-        
-        # Store in DynamoDB
+
+        # Save the case to DynamoDB
         cases_table.put_item(Item=case_record)
-        
-        # Log audit entry
+
+        # Write an audit log entry so we have a record of who registered this case
         user_info, ip_address = extract_user_info(event)
         log_audit(
             user_info=user_info,
@@ -102,7 +121,7 @@ def lambda_handler(event, context):
                 'procedure_date': body['procedure_start_date']
             }
         )
-        
+
         return {
             'statusCode': 201,
             'headers': {
@@ -115,7 +134,7 @@ def lambda_handler(event, context):
                 'next_stage': 'label_validation'
             })
         }
-        
+
     except Exception as e:
         print(f"Error: {str(e)}")
         return {
