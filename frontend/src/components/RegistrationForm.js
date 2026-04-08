@@ -1,5 +1,6 @@
 /**
  * Registration Form — collects male and female patient details to start a new IVF case.
+ * Supports manual entry and automatic label scanning via Bedrock OCR.
  */
 import React, { useState } from 'react';
 import { api } from '../api';
@@ -7,6 +8,10 @@ import { api } from '../api';
 function RegistrationForm({ onComplete, onViewSessions, onBack }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [scanningMale, setScanningMale] = useState(false);
+  const [scanningFemale, setScanningFemale] = useState(false);
+  const [maleScanPreview, setMaleScanPreview] = useState(null);
+  const [femaleScanPreview, setFemaleScanPreview] = useState(null);
   const [formData, setFormData] = useState({
     maleName: '',
     maleMpeid: '',
@@ -20,6 +25,52 @@ function RegistrationForm({ onComplete, onViewSessions, onBack }) {
     modelId: 'qwen.qwen3-vl-235b-a22b',
     modelName: 'Qwen3 VL 235B ⭐ (Best OCR)'
   });
+
+  // Handles label scan for either male or female patient.
+  // Sends the captured image to Bedrock OCR and auto-fills the matching form fields.
+  const handleScanLabel = async (e, patientType) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const isScanning = patientType === 'male' ? setScanningMale : setScanningFemale;
+    const setPreview = patientType === 'male' ? setMaleScanPreview : setFemaleScanPreview;
+
+    // Show image preview immediately
+    setPreview(URL.createObjectURL(file));
+    isScanning(true);
+    setError(null);
+
+    try {
+      const result = await api.scanPatientLabel(file, patientType, formData.modelId);
+
+      if (result.success && result.extracted) {
+        const d = result.extracted;
+        if (patientType === 'male') {
+          setFormData(prev => ({
+            ...prev,
+            maleName:     d.name      || prev.maleName,
+            maleLastName: d.last_name || prev.maleLastName,
+            maleMpeid:    d.mpeid     || prev.maleMpeid,
+            maleDob:      d.dob       || prev.maleDob,
+          }));
+        } else {
+          setFormData(prev => ({
+            ...prev,
+            femaleName:     d.name      || prev.femaleName,
+            femaleLastName: d.last_name || prev.femaleLastName,
+            femaleMpeid:    d.mpeid     || prev.femaleMpeid,
+            femaleDob:      d.dob       || prev.femaleDob,
+          }));
+        }
+      } else {
+        setError(result.error || 'Could not read label. Please fill in manually.');
+      }
+    } catch (err) {
+      setError('Scan failed. Please fill in manually.');
+    } finally {
+      isScanning(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -134,6 +185,46 @@ function RegistrationForm({ onComplete, onViewSessions, onBack }) {
       <form onSubmit={handleSubmit}>
         <div className="form-section">
           <h3>Male Patient Information</h3>
+
+          {/* Scan label option — staff can capture the wristband/label to auto-fill fields */}
+          <div style={{ marginBottom: '1rem', padding: '0.75rem 1rem', background: '#f0f4ff', borderRadius: '8px', border: '1px dashed #667eea' }}>
+            <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#555' }}>
+              Scan patient label to auto-fill details
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <label style={{ cursor: 'pointer' }}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: 'none' }}
+                  onChange={(e) => handleScanLabel(e, 'male')}
+                  disabled={scanningMale}
+                />
+                <span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  {scanningMale ? 'Scanning...' : 'Take Photo'}
+                </span>
+              </label>
+              <label style={{ cursor: 'pointer' }}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={(e) => handleScanLabel(e, 'male')}
+                  disabled={scanningMale}
+                />
+                <span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  Upload Image
+                </span>
+              </label>
+              {scanningMale && <span style={{ fontSize: '0.85rem', color: '#667eea' }}>Reading label...</span>}
+              {maleScanPreview && !scanningMale && (
+                <img src={maleScanPreview} alt="Scanned label" style={{ height: '48px', borderRadius: '4px', border: '1px solid #ddd' }} />
+              )}
+            </div>
+          </div>
           <div className="form-row">
             <div className="input-group">
               <input
@@ -193,6 +284,46 @@ function RegistrationForm({ onComplete, onViewSessions, onBack }) {
 
         <div className="form-section">
           <h3>Female Patient Information</h3>
+
+          {/* Scan label option for female patient */}
+          <div style={{ marginBottom: '1rem', padding: '0.75rem 1rem', background: '#f0f4ff', borderRadius: '8px', border: '1px dashed #667eea' }}>
+            <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#555' }}>
+              Scan patient label to auto-fill details
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <label style={{ cursor: 'pointer' }}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: 'none' }}
+                  onChange={(e) => handleScanLabel(e, 'female')}
+                  disabled={scanningFemale}
+                />
+                <span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  {scanningFemale ? 'Scanning...' : 'Take Photo'}
+                </span>
+              </label>
+              <label style={{ cursor: 'pointer' }}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={(e) => handleScanLabel(e, 'female')}
+                  disabled={scanningFemale}
+                />
+                <span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  Upload Image
+                </span>
+              </label>
+              {scanningFemale && <span style={{ fontSize: '0.85rem', color: '#667eea' }}>Reading label...</span>}
+              {femaleScanPreview && !scanningFemale && (
+                <img src={femaleScanPreview} alt="Scanned label" style={{ height: '48px', borderRadius: '4px', border: '1px solid #ddd' }} />
+              )}
+            </div>
+          </div>
           <div className="form-row">
             <div className="input-group">
               <input
