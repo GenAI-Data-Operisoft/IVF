@@ -6,6 +6,11 @@ import { api } from '../api';
 
 const ROLES = ['admin', 'supervisor', 'viewer'];
 const DEPARTMENTS = ['IVF Lab', 'Embryology', 'Nursing', 'Administration', 'IT', 'Other'];
+const CENTERS = [
+  'Cloudnine Hospital Malleswaram',
+  'Cloudnine Hospital Malad',
+  'Cloudnine Hospital Ludhiana',
+];
 
 // Module permission matrix — each module has view + edit
 const MODULES = [
@@ -338,6 +343,7 @@ function CreateUserModal({ onClose, onCreated }) {
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({ name:'', email:'', role:'viewer', department:'', temporaryPassword:'IVFTemp123!' });
   const [modulePerms, setModulePerms] = useState({ ...ROLE_MODULE_DEFAULTS['viewer'] });
+  const [selectedCenters, setSelectedCenters] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [customRoles] = useState(() => loadCustomRoles());
@@ -359,9 +365,7 @@ function CreateUserModal({ onClose, onCreated }) {
   const togglePerm = (moduleKey, type) => {
     setModulePerms(p => {
       const updated = { ...p, [moduleKey]: { ...p[moduleKey], [type]: !p[moduleKey][type] } };
-      // If edit is enabled, view must also be enabled
       if (type === 'edit' && updated[moduleKey].edit) updated[moduleKey].view = true;
-      // If view is disabled, edit must also be disabled
       if (type === 'view' && !updated[moduleKey].view) updated[moduleKey].edit = false;
       return updated;
     });
@@ -369,7 +373,7 @@ function CreateUserModal({ onClose, onCreated }) {
 
   const handleCreate = async () => {
     if (!form.name || !form.email) { setError('Name and email are required'); return; }
-    // Validate password meets Cognito policy: min 8 chars, uppercase, lowercase, number
+    if (selectedCenters.length === 0) { setError('Please select a hospital center'); return; }
     const pwd = form.temporaryPassword;
     if (!pwd || pwd.length < 8 || !/[A-Z]/.test(pwd) || !/[a-z]/.test(pwd) || !/[0-9]/.test(pwd)) {
       setError('Temporary password must be at least 8 characters with uppercase, lowercase and a number (e.g. IVFTemp123!)');
@@ -377,7 +381,6 @@ function CreateUserModal({ onClose, onCreated }) {
     }
     setSaving(true);
     try {
-      // Convert module perms to flat permissions for storage
       const flatPerms = {
         createCase:    modulePerms.ivfCapture?.edit  ?? false,
         processStages: modulePerms.ivfCapture?.edit  ?? false,
@@ -386,7 +389,7 @@ function CreateUserModal({ onClose, onCreated }) {
         viewAuditLog:  modulePerms.auditLog?.view    ?? false,
         manageUsers:   modulePerms.userMgmt?.edit    ?? false,
       };
-      await api.createUser({ ...form, permissions: flatPerms, modulePermissions: modulePerms });
+      await api.createUser({ ...form, permissions: flatPerms, modulePermissions: modulePerms, centers: selectedCenters });
       onCreated(`User ${form.email} created. Temp password: ${form.temporaryPassword}`);
     } catch (e) { setError(e.message); setSaving(false); }
   };
@@ -441,8 +444,22 @@ function CreateUserModal({ onClose, onCreated }) {
                 </select>
               </div>
               <div>
-                <label style={{ display:'block', marginBottom:'0.6rem', fontWeight:600, fontSize:'0.85rem', color:'#374151' }}>Base Role</label>
-                <div style={{ display:'flex', flexWrap:'wrap', gap:'8px' }}>
+                <label style={{ display:'block', marginBottom:'0.4rem', fontWeight:600, fontSize:'0.85rem', color:'#374151' }}>
+                  Hospital Center <span style={{ color:'#e11d48' }}>*</span>
+                </label>
+                <select
+                  value={selectedCenters[0] || ''}
+                  onChange={e => setSelectedCenters(e.target.value ? [e.target.value] : [])}
+                  style={{ width:'100%', padding:'0.6rem 0.75rem', border:'2px solid #e2e8f0', borderRadius:'8px', fontSize:'0.9rem', outline:'none' }}
+                >
+                  <option value="">Select center...</option>
+                  {CENTERS.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <p style={{ fontSize:'0.75rem', color:'#94a3b8', marginTop:'0.3rem' }}>User will only see cases from this center. Admin sees all centers.</p>
+              </div>
+
+              <div>
+                <label style={{ display:'block', marginBottom:'0.6rem', fontWeight:600, fontSize:'0.85rem', color:'#374151' }}>Base Role</label>                <div style={{ display:'flex', flexWrap:'wrap', gap:'8px' }}>
                   {allRoles.map(r => (
                     <button key={r.key} onClick={() => handleRoleChange(r.key, r.modulePerms)} style={{
                       padding:'0.5rem 0.9rem', borderRadius:'8px',

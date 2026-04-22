@@ -19,6 +19,10 @@ def lambda_handler(event, context):
         # Extract session ID from path parameters
         session_id = event['pathParameters']['sessionId']
         
+        # Optional stage_type filter from query string
+        query_params = event.get('queryStringParameters') or {}
+        stage_type_filter = query_params.get('stage_type')
+        
         # Query images by session ID
         response = images_table.query(
             IndexName='SessionIdIndex',
@@ -27,6 +31,14 @@ def lambda_handler(event, context):
         )
         
         images = response.get('Items', [])
+        
+        # Filter by stage_type if provided
+        # Images with no stage_type (legacy) are treated as icsi_documentation
+        if stage_type_filter:
+            images = [
+                img for img in images
+                if (img.get('stage_type') or 'icsi_documentation') == stage_type_filter
+            ]
         
         # Generate presigned URLs for download
         for image in images:

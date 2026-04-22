@@ -29,6 +29,7 @@ aws s3 cp "$ASSETS_DIR/hoempagebaby.png"   "s3://$S3_BUCKET/hoempagebaby.png"   
 aws s3 cp "$ASSETS_DIR/IVFgif.gif"         "s3://$S3_BUCKET/IVFgif.gif"         --region "$REGION"
 aws s3 cp "$ASSETS_DIR/IVF.png"            "s3://$S3_BUCKET/IVF.png"            --region "$REGION"
 aws s3 cp "$ASSETS_DIR/images.jpg"         "s3://$S3_BUCKET/images.jpg"         --region "$REGION"
+aws s3 cp "$ASSETS_DIR/Mother_and_son_design_tattoo-removebg-preview.png" "s3://$S3_BUCKET/Mother_and_son_design_tattoo-removebg-preview.png" --region "$REGION"
 
 echo "Invalidating CloudFront cache..."
 aws cloudfront create-invalidation \

@@ -160,45 +160,53 @@ function Login({ onLoginSuccess }) {
 
   return (
     <div className="login-container">
-      <div className="login-box">
-        <h2>IVF Witness Capture</h2>
-        <p className="subtitle">Sign in to continue</p>
-        
-        {error && <div className="error-message">{error}</div>}
-        
-        <form onSubmit={handleLogin}>
-          <div className="form-group">
-            <label>Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              placeholder="Enter your email"
-              autoComplete="email"
-            />
+      <div className="login-image-panel">
+        <img
+          src="https://d1nmtja0c4ok3x.cloudfront.net/Mother_and_son_design_tattoo-removebg-preview.png"
+          alt="Cloudnine IVF"
+        />
+      </div>
+      <div className="login-form-panel">
+        <div className="login-box">
+          <h2>IVF Witness Capture</h2>
+          <p className="subtitle">Sign in to continue</p>
+
+          {error && <div className="error-message">{error}</div>}
+
+          <form onSubmit={handleLogin}>
+            <div className="form-group">
+              <label>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                placeholder="Enter your email"
+                autoComplete="email"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="Enter your password"
+                autoComplete="current-password"
+              />
+            </div>
+
+            <button type="submit" disabled={loading} className="login-button">
+              {loading ? 'Signing in...' : 'Sign In'}
+            </button>
+          </form>
+
+          <div className="login-footer">
+            <p>Don't have an account? <Link to="/signup">Sign up</Link></p>
+            <p><Link to="/forgot-password">Forgot password?</Link></p>
           </div>
-
-          <div className="form-group">
-            <label>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="Enter your password"
-              autoComplete="current-password"
-            />
-          </div>
-
-          <button type="submit" disabled={loading} className="login-button">
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
-
-        <div className="login-footer">
-          <p>Don't have an account? <Link to="/signup">Sign up</Link></p>
-          <p><Link to="/forgot-password">Forgot password?</Link></p>
         </div>
       </div>
     </div>

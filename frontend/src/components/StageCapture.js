@@ -4,6 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import { STAGES } from '../config';
+import usePermissionStore from '../store/permissionStore';
 
 const IconUpload = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -30,7 +31,147 @@ const RESOLUTION_CATEGORIES = [
   "Other (specify in notes)"
 ];
 
-function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus }) {
+function SpermPreparationUpload({ sessionId, caseData, uploadedImages, uploading, showUpload, onCapture, onBothUploaded }) {
+  const [remark, setRemark] = React.useState('');
+  const [existingRemark, setExistingRemark] = React.useState('');
+  const [savingRemark, setSavingRemark] = React.useState(false);
+  const [remarkSaved, setRemarkSaved] = React.useState(false);
+
+  React.useEffect(() => {
+    api.getSpermPreparationRemark(sessionId)
+      .then(d => { setRemark(d.remark || ''); setExistingRemark(d.remark || ''); })
+      .catch(() => {});
+  }, [sessionId]);
+
+  const collectionUploaded = uploadedImages.some(img => img.patientType === 'collection');
+  const processUploaded = uploadedImages.some(img => img.patientType === 'process');
+
+  const handleCapture = (e, type) => {
+    onCapture(e, type);
+  };
+
+  const handleSaveRemark = async () => {
+    setSavingRemark(true);
+    try {
+      await api.saveSpermPreparationRemark(sessionId, remark);
+      setExistingRemark(remark);
+      setRemarkSaved(true);
+      setTimeout(() => setRemarkSaved(false), 3000);
+    } catch { /* silent */ }
+    finally { setSavingRemark(false); }
+  };
+
+  const subCardStyle = {
+    flex: 1, background: '#fff', border: '1.5px solid #e2e8f0',
+    borderRadius: '12px', padding: '1.25rem',
+    boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+  };
+
+  const SubSection = ({ type, label, uploaded, previewUrl }) => (
+    <div style={subCardStyle}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.85rem' }}>
+        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg,#667eea,#764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.75rem', fontWeight: 700, flexShrink: 0 }}>
+          {type === 'collection' ? 'CC' : 'PS'}
+        </div>
+        <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#1a202c' }}>{label}</h4>
+      </div>
+
+      {/* Male patient info */}
+      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.65rem 0.85rem', marginBottom: '0.85rem', fontSize: '0.82rem', color: '#374151' }}>
+        <p style={{ margin: '0 0 2px', fontWeight: 600 }}>Male Patient</p>
+        <p style={{ margin: 0, color: '#64748b' }}>{caseData.male_patient.name} · {caseData.male_patient.mpeid}</p>
+      </div>
+
+      {uploaded ? (
+        <div>
+          <img src={previewUrl} alt={label} style={{ width: '100%', height: '120px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '0.5rem' }} />
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#dcfce7', color: '#16a34a', padding: '3px 10px', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 600 }}>
+            ✓ Image Uploaded
+          </div>
+        </div>
+      ) : (
+        <div>
+          <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.6rem' }}>
+            Upload label image for male patient validation
+          </p>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {showUpload && (
+              <label style={{ cursor: 'pointer' }}>
+                <input type="file" accept="image/jpeg,image/jpg,image/png" style={{ display: 'none' }}
+                  onChange={(e) => handleCapture(e, type)} disabled={uploading} />
+                <span className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '0.45rem 0.85rem', fontSize: '0.82rem' }}>
+                  <IconUpload /> {uploading ? 'Uploading...' : 'Upload'}
+                </span>
+              </label>
+            )}
+            <label style={{ cursor: 'pointer' }}>
+              <input type="file" accept="image/jpeg,image/jpg,image/png" capture="environment" style={{ display: 'none' }}
+                onChange={(e) => handleCapture(e, type)} disabled={uploading} />
+              <span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '0.45rem 0.85rem', fontSize: '0.82rem' }}>
+                <IconCamera /> {uploading ? '...' : 'Take Photo'}
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div>
+      <p className="info-text" style={{ marginBottom: '1rem' }}>
+        Upload male patient label images for both sub-sections to validate
+      </p>
+
+      {/* Two sub-sections side by side */}
+      <div style={{ display: 'flex', gap: '1.25rem', marginBottom: '1.5rem' }}>
+        <SubSection
+          type="collection"
+          label="Collection Container"
+          uploaded={collectionUploaded}
+          previewUrl={uploadedImages.find(img => img.patientType === 'collection')?.previewUrl}
+        />
+        <SubSection
+          type="process"
+          label="Process Sperm Sample"
+          uploaded={processUploaded}
+          previewUrl={uploadedImages.find(img => img.patientType === 'process')?.previewUrl}
+        />
+      </div>
+
+      {/* Remark */}
+      <div style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem', marginBottom: '1rem' }}>
+        <label style={{ display: 'block', fontWeight: 600, fontSize: '0.88rem', color: '#374151', marginBottom: '0.4rem' }}>
+          Remark
+        </label>
+        <textarea
+          style={{ width: '100%', padding: '0.65rem 0.85rem', border: '1.5px solid #e2e8f0', borderRadius: '8px', fontSize: '0.88rem', outline: 'none', boxSizing: 'border-box', background: '#fff', resize: 'vertical', minHeight: '75px', fontFamily: 'inherit' }}
+          placeholder="Add any observations or remarks about the sperm preparation..."
+          value={remark}
+          onChange={(e) => { setRemark(e.target.value); setRemarkSaved(false); }}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.5rem' }}>
+          <button type="button" onClick={handleSaveRemark} disabled={savingRemark || remark === existingRemark}
+            className="btn-secondary" style={{ fontSize: '0.85rem', opacity: remark === existingRemark ? 0.5 : 1 }}>
+            {savingRemark ? 'Saving...' : 'Save Remark'}
+          </button>
+          {remarkSaved && <span style={{ fontSize: '0.8rem', color: '#16a34a' }}>✓ Saved</span>}
+        </div>
+      </div>
+
+      {/* Status hint */}
+      {(!collectionUploaded || !processUploaded) && (
+        <p style={{ fontSize: '0.82rem', color: '#94a3b8', textAlign: 'center' }}>
+          Upload both images to start validation
+        </p>
+      )}
+    </div>
+  );
+}
+
+function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, embedded = false }) {
+  const { canUploadImage } = usePermissionStore();
+  const showUpload = canUploadImage();
   const [uploadedImages, setUploadedImages] = useState([]);
   const [currentImage, setCurrentImage] = useState(1);
   const [uploading, setUploading] = useState(false);
@@ -244,8 +385,6 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus }) 
 
   const compressImage = (file) => {
     return new Promise((resolve) => {
-      // If file is under 1MB, no compression needed
-      if (file.size < 1024 * 1024) return resolve(file);
       const img = new Image();
       const url = URL.createObjectURL(file);
       img.onload = () => {
@@ -260,7 +399,13 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus }) 
         canvas.width = width;
         canvas.height = height;
         canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        canvas.toBlob((blob) => resolve(new File([blob], file.name, { type: 'image/jpeg' })), 'image/jpeg', 0.85);
+        // Always output as JPEG for consistent content type across all devices
+        const quality = file.size < 1024 * 1024 ? 0.92 : 0.85;
+        canvas.toBlob((blob) => resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', quality);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(file); // fallback to original if canvas fails
       };
       img.src = url;
     });
@@ -278,10 +423,10 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus }) 
       // Create preview URL
       const previewUrl = URL.createObjectURL(file);
       
-      // For male sample collection, use specific image numbers for each patient
+      // For male sample collection, use specific image numbers for each sub-section
       let imageNumber = currentImage;
       if (stage.id === 'male_sample_collection' && patientType) {
-        imageNumber = patientType === 'male' ? 1 : 2;
+        imageNumber = patientType === 'collection' ? 1 : 2;
       }
       
       
@@ -294,15 +439,10 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus }) 
       const newUpload = { imageNumber, s3Key, patientType, previewUrl };
       setUploadedImages([...uploadedImages, newUpload]);
       
-      // For male sample collection, check if both images uploaded
+      // For male sample collection, trigger validation immediately per sub-section
       if (stage.id === 'male_sample_collection') {
-        const maleUploaded = uploadedImages.some(img => img.patientType === 'male') || patientType === 'male';
-        const femaleUploaded = uploadedImages.some(img => img.patientType === 'female') || patientType === 'female';
-        
-        if (maleUploaded && femaleUploaded) {
-          setProcessing(true);
-          pollForValidation();
-        }
+        setProcessing(true);
+        pollForValidation();
       } else {
         // For other stages, check if all images uploaded
         if (currentImage >= stage.images) {
@@ -458,6 +598,7 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus }) 
 
   return (
     <div className="stage-capture">
+      {!embedded && (
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button onClick={onViewStatus} className="btn-secondary" style={{ padding: '7px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -473,6 +614,7 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus }) 
           View All Stages
         </button>
       </div>
+      )}
       <p className="stage-info">
         Session ID: <code>{sessionId}</code>
       </p>
@@ -485,105 +627,16 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus }) 
       {!processing && !validationResult && !showPreviousResult && !stuckInProgress && (
         <div className="upload-section">
           {stage.id === 'male_sample_collection' ? (
-            // Special layout for male sample collection - separate uploads for each patient
-            <div className="dual-upload-section">
-              <h3>Upload Images for Both Patients</h3>
-              <p className="info-text">The male sample tube has labels on both sides - one for each patient</p>
-              
-              <div className="patient-upload-cards">
-                <div className="patient-upload-card">
-                  <div className="patient-card">
-                    <h4>Male Patient</h4>
-                    <p><strong>Name:</strong> {caseData.male_patient.name} {caseData.male_patient.last_name || ""}</p>
-                    <p><strong>MPEID:</strong> {caseData.male_patient.mpeid}</p>
-                  </div>
-                  
-                  {uploadedImages.some(img => img.patientType === 'male') ? (
-                    <div className="upload-success">
-                      <div className="image-preview">
-                        <img 
-                          src={uploadedImages.find(img => img.patientType === 'male').previewUrl} 
-                          alt="Male patient side"
-                        />
-                      </div>
-                      <div className="success-badge">✓ Image Uploaded</div>
-                    </div>
-                  ) : (
-                    <div className="capture-options">
-                      <label className="file-input-label">
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/jpg,image/png"
-                          onChange={(e) => handleImageCapture(e, 'male')}
-                          disabled={uploading}
-                        />
-                        <span className="btn-primary">
-                          {uploading ? 'Uploading...' : <><IconUpload /> Upload Image</>}
-                        </span>
-                      </label>
-                      <label className="file-input-label">
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/jpg,image/png"
-                          capture="environment"
-                          onChange={(e) => handleImageCapture(e, 'male')}
-                          disabled={uploading}
-                        />
-                        <span className="btn-secondary">
-                          {uploading ? 'Uploading...' : <><IconCamera /> Take Photo</>}
-                        </span>
-                      </label>
-                    </div>
-                  )}
-                </div>
-
-                <div className="patient-upload-card">
-                  <div className="patient-card">
-                    <h4>Female Patient</h4>
-                    <p><strong>Name:</strong> {caseData.female_patient.name} {caseData.female_patient.last_name || ""}</p>
-                    <p><strong>MPEID:</strong> {caseData.female_patient.mpeid}</p>
-                  </div>
-                  
-                  {uploadedImages.some(img => img.patientType === 'female') ? (
-                    <div className="upload-success">
-                      <div className="image-preview">
-                        <img 
-                          src={uploadedImages.find(img => img.patientType === 'female').previewUrl} 
-                          alt="Female patient side"
-                        />
-                      </div>
-                      <div className="success-badge">✓ Image Uploaded</div>
-                    </div>
-                  ) : (
-                    <div className="capture-options">
-                      <label className="file-input-label">
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/jpg,image/png"
-                          onChange={(e) => handleImageCapture(e, 'female')}
-                          disabled={uploading}
-                        />
-                        <span className="btn-primary">
-                          {uploading ? 'Uploading...' : <><IconUpload /> Upload Image</>}
-                        </span>
-                      </label>
-                      <label className="file-input-label">
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/jpg,image/png"
-                          capture="environment"
-                          onChange={(e) => handleImageCapture(e, 'female')}
-                          disabled={uploading}
-                        />
-                        <span className="btn-secondary">
-                          {uploading ? 'Uploading...' : <><IconCamera /> Take Photo</>}
-                        </span>
-                      </label>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            // Sperm Preparation — 2 sub-sections side by side, male patient only, remark below
+            <SpermPreparationUpload
+              sessionId={sessionId}
+              caseData={caseData}
+              uploadedImages={uploadedImages}
+              uploading={uploading}
+              showUpload={showUpload}
+              onCapture={handleImageCapture}
+              onBothUploaded={() => { setProcessing(true); pollForValidation(); }}
+            />
           ) : (
             // Standard layout for other stages
             <>
@@ -593,28 +646,30 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus }) 
                 <div className="patient-card">
                   <h4>Male Patient</h4>
                   <p><strong>Name:</strong> {caseData.male_patient.name} {caseData.male_patient.last_name || ""}</p>
-                  <p><strong>MPEID:</strong> {caseData.male_patient.mpeid}</p>
+                  <p><strong>MPID:</strong> {caseData.male_patient.mpeid}</p>
                 </div>
                 <div className="patient-card">
                   <h4>Female Patient</h4>
                   <p><strong>Name:</strong> {caseData.female_patient.name} {caseData.female_patient.last_name || ""}</p>
-                  <p><strong>MPEID:</strong> {caseData.female_patient.mpeid}</p>
+                  <p><strong>MPID:</strong> {caseData.female_patient.mpeid}</p>
                 </div>
               </div>
 
               <div className="upload-controls">
                 <div className="capture-options">
-                  <label className="file-input-label">
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/jpg,image/png"
-                      onChange={handleImageCapture}
-                      disabled={uploading}
-                    />
-                    <span className="btn-primary">
-                      {uploading ? 'Uploading...' : <><IconUpload /> Upload Image</>}
-                    </span>
-                  </label>
+                  {showUpload && (
+                    <label className="file-input-label">
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/jpg,image/png"
+                        onChange={handleImageCapture}
+                        disabled={uploading}
+                      />
+                      <span className="btn-primary">
+                        {uploading ? 'Uploading...' : <><IconUpload /> Upload Image</>}
+                      </span>
+                    </label>
+                  )}
                   <label className="file-input-label">
                     <input
                       type="file"

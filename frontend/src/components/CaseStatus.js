@@ -6,7 +6,7 @@ import { api } from '../api';
 import { STAGES } from '../config';
 import usePermissionStore from '../store/permissionStore';
 
-function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage, userRole, onBack }) {
+function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage, onStartOocyteImpression, userRole, onBack }) {
   const { canEdit } = usePermissionStore();
   const isViewer = !canEdit('ivfCapture');
   const [caseData, setCaseData] = useState(initialData);
@@ -91,15 +91,11 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
     setEditedData({
       male_patient: {
         name: caseData.male_patient.name,
-        last_name: caseData.male_patient.last_name || '',
         mpeid: caseData.male_patient.mpeid,
-        dob: caseData.male_patient.dob || ''
       },
       female_patient: {
         name: caseData.female_patient.name,
-        last_name: caseData.female_patient.last_name || '',
         mpeid: caseData.female_patient.mpeid,
-        dob: caseData.female_patient.dob || ''
       }
     });
     setShowEditModal(true);
@@ -108,11 +104,11 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
   const handleSavePatientDetails = async () => {
     // Validate required fields (only name and MPEID are required)
     if (!editedData.male_patient.name || !editedData.male_patient.mpeid) {
-      alert('Male patient name and MPEID are required');
+      alert('Male patient full name and MPID are required');
       return;
     }
     if (!editedData.female_patient.name || !editedData.female_patient.mpeid) {
-      alert('Female patient name and MPEID are required');
+      alert('Female patient full name and MPID are required');
       return;
     }
 
@@ -217,20 +213,19 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
         <p><strong>Session ID:</strong> <code>{sessionId}</code></p>
         <p><strong>Model:</strong> {caseData.model_config.model_name.replace(/\s*⭐.*$/, '').replace(/\s*\(.*?\)\s*$/, '')}</p>
         <p><strong>Procedure Date:</strong> {caseData.procedure_start_date}</p>
+        {caseData.doctor_name && <p><strong>Doctor:</strong> {caseData.doctor_name}</p>}
       </div>
 
       <div className="patient-summary">
         <div className="patient-card">
           <h3>Male Patient</h3>
           <p><strong>Name:</strong> {caseData.male_patient.name} {caseData.male_patient.last_name}</p>
-          <p><strong>MPEID:</strong> {caseData.male_patient.mpeid}</p>
-          {caseData.male_patient.dob && <p><strong>DOB:</strong> {caseData.male_patient.dob}</p>}
+          <p><strong>MPID:</strong> {caseData.male_patient.mpeid}</p>
         </div>
         <div className="patient-card">
           <h3>Female Patient</h3>
           <p><strong>Name:</strong> {caseData.female_patient.name} {caseData.female_patient.last_name}</p>
-          <p><strong>MPEID:</strong> {caseData.female_patient.mpeid}</p>
-          {caseData.female_patient.dob && <p><strong>DOB:</strong> {caseData.female_patient.dob}</p>}
+          <p><strong>MPID:</strong> {caseData.female_patient.mpeid}</p>
         </div>
       </div>
 
@@ -282,47 +277,43 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
                   )}
                 </div>
                 {stageData.status === 'pending' && !isViewer && (
-                  <button
-                    onClick={() => handleStartValidation(stage.id)}
-                    className="btn-start-validation"
-                  >
-                    {stage.id === 'icsi_documentation' ? (
-                      <>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                        Start Documentation
-                      </>
-                    ) : (
-                      <>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                        Start Validation
-                      </>
-                    )}
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-start' }}>
+                    <button
+                      onClick={() => handleStartValidation(stage.id)}
+                      className="btn-start-validation"
+                    >
+                      {stage.id === 'icsi_documentation' ? (
+                        <>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                          Start Documentation
+                        </>
+                      ) : (
+                        <>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                          {stage.id === 'denudation' ? 'Start Oocyte Impression' : 'Start Validation'}
+                        </>
+                      )}
+                    </button>
+                  </div>
                 )}
                 {(stageData.status === 'completed' || stageData.status === 'failed' || stageData.status === 'in_progress') && !isViewer && (
-                  <button
-                    onClick={() => handleStartValidation(stage.id)}
-                    className="btn-retry-validation"
-                    style={{
-                      backgroundColor: stageData.status === 'in_progress' ? '#667eea' : '#ff9800',
-                      color: 'white',
-                      border: 'none',
-                      padding: '0.6rem 1.2rem',
-                      borderRadius: '6px',
-                      fontSize: '0.9rem',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      marginTop: '0.5rem',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      boxShadow: stageData.status === 'in_progress' ? '0 2px 4px rgba(102,126,234,0.3)' : '0 2px 4px rgba(255,152,0,0.3)',
-                      transition: 'all 0.2s ease'
-                    }}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
-                    Retry Validation
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-start' }}>
+                    <button
+                      onClick={() => handleStartValidation(stage.id)}
+                      className="btn-retry-validation"
+                      style={{
+                        backgroundColor: stageData.status === 'in_progress' ? '#667eea' : '#ff9800',
+                        color: 'white', border: 'none', padding: '0.6rem 1.2rem',
+                        borderRadius: '6px', fontSize: '0.9rem', fontWeight: '600',
+                        cursor: 'pointer', marginTop: '0.5rem', display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        boxShadow: stageData.status === 'in_progress' ? '0 2px 4px rgba(102,126,234,0.3)' : '0 2px 4px rgba(255,152,0,0.3)',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
+                      {stage.id === 'denudation' ? 'Open Oocyte Impression' : 'Retry Validation'}
+                    </button>
+                  </div>
                 )}
               </div>
             );
@@ -472,7 +463,7 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
                                   <p><strong>Name:</strong> {extraction.extracted_data.male_name || extraction.extracted_data.female_name || 'N/A'}</p>
                                 )}
                                 {(extraction.extracted_data.male_mpeid || extraction.extracted_data.female_mpeid) && (
-                                  <p><strong>MPEID:</strong> {extraction.extracted_data.male_mpeid || extraction.extracted_data.female_mpeid || 'N/A'}</p>
+                                  <p><strong>MPID:</strong> {extraction.extracted_data.male_mpeid || extraction.extracted_data.female_mpeid || 'N/A'}</p>
                                 )}
                                 {extraction.extracted_data.male_dob && (
                                   <p><strong>Male DOB:</strong> {extraction.extracted_data.male_dob}</p>
@@ -488,7 +479,7 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
                             ) : (
                               <>
                                 <p><strong>Name:</strong> {extraction.extracted_name || 'N/A'}</p>
-                                <p><strong>MPEID:</strong> {extraction.extracted_mpeid || 'N/A'}</p>
+                                <p><strong>MPID:</strong> {extraction.extracted_mpeid || 'N/A'}</p>
                                 {extraction.extracted_dob && (
                                   <p><strong>DOB:</strong> {extraction.extracted_dob}</p>
                                 )}
@@ -511,13 +502,13 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
                                 <p><strong>Male Name:</strong> {extraction.validation_result.male_name_match ? '✅ Match' : '❌ Mismatch'}</p>
                               )}
                               {extraction.validation_result.male_mpeid_match !== undefined && extraction.validation_result.male_mpeid_match !== null && (
-                                <p><strong>Male MPEID:</strong> {extraction.validation_result.male_mpeid_match ? '✅ Match' : '❌ Mismatch'}</p>
+                                <p><strong>Male MPID:</strong> {extraction.validation_result.male_mpeid_match ? '✅ Match' : '❌ Mismatch'}</p>
                               )}
                               {extraction.validation_result.female_name_match !== undefined && extraction.validation_result.female_name_match !== null && (
                                 <p><strong>Female Name:</strong> {extraction.validation_result.female_name_match ? '✅ Match' : '❌ Mismatch'}</p>
                               )}
                               {extraction.validation_result.female_mpeid_match !== undefined && extraction.validation_result.female_mpeid_match !== null && (
-                                <p><strong>Female MPEID:</strong> {extraction.validation_result.female_mpeid_match ? '✅ Match' : '❌ Mismatch'}</p>
+                                <p><strong>Female MPID:</strong> {extraction.validation_result.female_mpeid_match ? '✅ Match' : '❌ Mismatch'}</p>
                               )}
                               
                               {/* Show mismatches if any */}
@@ -568,7 +559,7 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
                 <div style={{ display: 'grid', gap: '1rem' }}>
                   <div>
                     <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                      First Name <span style={{ color: 'red' }}>*</span>
+                      Full Name <span style={{ color: 'red' }}>*</span>
                     </label>
                     <input
                       type="text"
@@ -580,18 +571,7 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
                   </div>
                   <div>
                     <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                      Last Name
-                    </label>
-                    <input
-                      type="text"
-                      value={editedData.male_patient.last_name}
-                      onChange={(e) => handleEditChange('male_patient', 'last_name', e.target.value)}
-                      style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                      MPEID <span style={{ color: 'red' }}>*</span>
+                      MPID <span style={{ color: 'red' }}>*</span>
                     </label>
                     <input
                       type="text"
@@ -599,17 +579,6 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
                       onChange={(e) => handleEditChange('male_patient', 'mpeid', e.target.value)}
                       style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
                       required
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                      Date of Birth
-                    </label>
-                    <input
-                      type="date"
-                      value={editedData.male_patient.dob}
-                      onChange={(e) => handleEditChange('male_patient', 'dob', e.target.value)}
-                      style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
                     />
                   </div>
                 </div>
@@ -620,7 +589,7 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
                 <div style={{ display: 'grid', gap: '1rem' }}>
                   <div>
                     <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                      First Name <span style={{ color: 'red' }}>*</span>
+                      Full Name <span style={{ color: 'red' }}>*</span>
                     </label>
                     <input
                       type="text"
@@ -632,18 +601,7 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
                   </div>
                   <div>
                     <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                      Last Name
-                    </label>
-                    <input
-                      type="text"
-                      value={editedData.female_patient.last_name}
-                      onChange={(e) => handleEditChange('female_patient', 'last_name', e.target.value)}
-                      style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                      MPEID <span style={{ color: 'red' }}>*</span>
+                      MPID <span style={{ color: 'red' }}>*</span>
                     </label>
                     <input
                       type="text"
@@ -651,17 +609,6 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
                       onChange={(e) => handleEditChange('female_patient', 'mpeid', e.target.value)}
                       style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
                       required
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                      Date of Birth
-                    </label>
-                    <input
-                      type="date"
-                      value={editedData.female_patient.dob}
-                      onChange={(e) => handleEditChange('female_patient', 'dob', e.target.value)}
-                      style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
                     />
                   </div>
                 </div>

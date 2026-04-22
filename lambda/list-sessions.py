@@ -36,11 +36,15 @@ def lambda_handler(event, context):
         query_params = event.get('queryStringParameters') or {}
         search_query = query_params.get('search', '').strip()
         limit = int(query_params.get('limit', '10'))
+        center_filter = query_params.get('center', '').strip()  # single center filter for admin
+        # user_center: single center the user belongs to (non-admin)
+        user_center = query_params.get('user_center', '').strip()
+        is_admin = query_params.get('is_admin', 'false').lower() == 'true'
 
         if search_query:
-            sessions = search_sessions(search_query, limit)
+            sessions = search_sessions(search_query, limit, user_center, is_admin, center_filter)
         else:
-            sessions = list_recent_sessions(limit)
+            sessions = list_recent_sessions(limit, user_center, is_admin, center_filter)
 
         return {
             'statusCode': 200,
@@ -68,23 +72,20 @@ def lambda_handler(event, context):
         }
 
 
-def list_recent_sessions(limit):
-    """
-    Scans the cases table and returns the most recent sessions sorted by date.
-    We fetch more than the limit to ensure we have enough after sorting.
-    """
-    response = cases_table.scan(
-        Limit=limit * 2
-    )
+def list_recent_sessions(limit, user_center='', is_admin=False, center_filter=''):
+    response = cases_table.scan(Limit=limit * 5)
     items = response.get('Items', [])
 
-    # Sort by procedure date, newest first
-    items.sort(key=lambda x: x.get('procedure_start_date', ''), reverse=True)
+    if not is_admin and user_center:
+        items = [i for i in items if not i.get('center') or i.get('center', '') == user_center]
+    elif is_admin and center_filter:
+        items = [i for i in items if i.get('center', '') == center_filter]
 
+    items.sort(key=lambda x: x.get('procedure_start_date', ''), reverse=True)
     return [format_session(item) for item in items[:limit]]
 
 
-def search_sessions(query, limit):
+def search_sessions(query, limit, user_center='', is_admin=False, center_filter=''):
     """
     Searches sessions by MPEID, patient name, or session ID.
     If the query looks like a UUID (long string with dashes), tries an exact
@@ -92,16 +93,17 @@ def search_sessions(query, limit):
     """
     query_upper = query.upper().strip()
 
-    # Try exact session ID match first if the query looks like a UUID
     if len(query) > 30 and '-' in query:
         try:
             response = cases_table.get_item(Key={'sessionId': query})
             if 'Item' in response:
-                return [format_session(response['Item'])]
+                item = response['Item']
+                if not is_admin and user_center and item.get('center') and item.get('center', '') != user_center:
+                    return []
+                return [format_session(item)]
         except:
             pass
 
-    # Fall back to scanning and filtering by MPEID or name
     response = cases_table.scan(
         FilterExpression=(
             Attr('male_patient.mpeid').contains(query_upper) |
@@ -109,13 +111,16 @@ def search_sessions(query, limit):
             Attr('male_patient.name').contains(query_upper) |
             Attr('female_patient.name').contains(query_upper)
         ),
-        Limit=limit * 2
+        Limit=limit * 5
     )
     items = response.get('Items', [])
 
-    # Sort by procedure date, newest first
-    items.sort(key=lambda x: x.get('procedure_start_date', ''), reverse=True)
+    if not is_admin and user_center:
+        items = [i for i in items if not i.get('center') or i.get('center', '') == user_center]
+    elif is_admin and center_filter:
+        items = [i for i in items if i.get('center', '') == center_filter]
 
+    items.sort(key=lambda x: x.get('procedure_start_date', ''), reverse=True)
     return [format_session(item) for item in items[:limit]]
 
 
@@ -142,6 +147,8 @@ def format_session(item):
     return {
         'sessionId': item.get('sessionId'),
         'procedure_start_date': item.get('procedure_start_date'),
+        'center': item.get('center', ''),
+        'doctor_name': item.get('doctor_name', ''),
         'male_patient': {
             'name': item.get('male_patient', {}).get('name'),
             'last_name': item.get('male_patient', {}).get('last_name'),

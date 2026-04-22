@@ -11,6 +11,11 @@ import Home from './components/Home';
 import RegistrationForm from './components/RegistrationForm';
 import StageCapture from './components/StageCapture';
 import ICSIDocumentation from './components/ICSIDocumentation';
+import OocyteImpression from './components/OocyteImpression';
+import ICSIStage from './components/ICSIStage';
+import FertilizationCheck from './components/FertilizationCheck';
+import CleavageStage from './components/CleavageStage';
+import BlastocystStage from './components/BlastocystStage';
 import CaseStatus from './components/CaseStatus';
 import SessionList from './components/SessionList';
 import Metrics from './components/Metrics';
@@ -24,6 +29,7 @@ import Chatbot from './components/Chatbot';
 Amplify.configure(awsConfig);
 
 function App() {
+  const { canUseChatbot } = usePermissionStore();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -62,7 +68,10 @@ function App() {
         email: attributes.email || currentUser.username,
         name: attributes.name || attributes.email || currentUser.username,
         role,
-        department: attributes['custom:department'] || ''
+        department: attributes['custom:department'] || '',
+        centers: (() => {
+            try { return attributes['custom:centers'] ? JSON.parse(attributes['custom:centers']) : null; } catch { return null; }
+          })(),
       });
       setIsAuthenticated(true);
     } catch (err) {
@@ -76,9 +85,9 @@ function App() {
     }
   };
 
-  const handleLoginSuccess = () => {
-    // Call checkAuthStatus to load user attributes and populate permission store
-    checkAuthStatus();
+  const handleLoginSuccess = async () => {
+    // Load full user attributes first, then show dashboard
+    await checkAuthStatus();
   };
 
   const handleLogout = async () => {
@@ -144,6 +153,12 @@ function App() {
       setCurrentStageIndex(stageIndex);
       setCurrentView('capture');
     }
+  };
+
+  const handleStartOocyteImpression = async () => {
+    const data = await api.getCase(sessionId);
+    setCaseData(data);
+    setCurrentView('oocyte-impression');
   };
 
   const handleViewSessions = () => {
@@ -278,7 +293,12 @@ function App() {
                     <span className="header-role-badge" style={{ background: getRoleBadgeColor(user.role) }}>
                       {user.role}
                     </span>
-                    {user.department && (
+                    {user.centers?.[0] && (
+                      <span className="header-dept" title={user.centers[0]}>
+                        📍 {user.centers[0].replace('Cloudnine Hospital ', '')}
+                      </span>
+                    )}
+                    {!user.centers?.[0] && user.department && (
                       <span className="header-dept">{user.department}</span>
                     )}
                   </div>
@@ -319,6 +339,7 @@ function App() {
             onViewAuditLog={handleViewAuditLog}
             onViewUserManagement={handleViewUserManagement}
             userRole={user?.role}
+            user={user}
           />
         )}
 
@@ -327,6 +348,7 @@ function App() {
             onComplete={handleRegistrationComplete}
             onViewSessions={handleViewSessions}
             onBack={handleBackToHome}
+            user={user}
           />
         )}
 
@@ -335,13 +357,42 @@ function App() {
             onSelectSession={handleSelectSession}
             onStartNew={handleStartNewFromSessions}
             onBack={handleBackToHome}
+            user={user}
           />
         )}
 
         {currentView === 'capture' && sessionId && (
           <>
             {STAGES[currentStageIndex].id === 'icsi_documentation' ? (
-              <ICSIDocumentation
+              <CleavageStage
+                sessionId={sessionId}
+                caseData={caseData}
+                onComplete={handleStageComplete}
+                onViewStatus={handleViewStatus}
+              />
+            ) : STAGES[currentStageIndex].id === 'blastocyst' ? (
+              <BlastocystStage
+                sessionId={sessionId}
+                caseData={caseData}
+                onComplete={handleStageComplete}
+                onViewStatus={handleViewStatus}
+              />
+            ) : STAGES[currentStageIndex].id === 'fertilization_check' ? (
+              <FertilizationCheck
+                sessionId={sessionId}
+                caseData={caseData}
+                onComplete={handleStageComplete}
+                onViewStatus={handleViewStatus}
+              />
+            ) : STAGES[currentStageIndex].id === 'denudation' ? (
+              <OocyteImpression
+                sessionId={sessionId}
+                caseData={caseData}
+                onComplete={handleStageComplete}
+                onViewStatus={handleViewStatus}
+              />
+            ) : STAGES[currentStageIndex].id === 'icsi' ? (
+              <ICSIStage
                 sessionId={sessionId}
                 caseData={caseData}
                 onComplete={handleStageComplete}
@@ -359,6 +410,15 @@ function App() {
           </>
         )}
 
+        {currentView === 'oocyte-impression' && sessionId && (
+          <OocyteImpression
+            sessionId={sessionId}
+            caseData={caseData}
+            onComplete={handleViewStatus}
+            onViewStatus={handleViewStatus}
+          />
+        )}
+
         {currentView === 'status' && sessionId && (
           <CaseStatus
             sessionId={sessionId}
@@ -372,6 +432,7 @@ function App() {
               setCurrentView('registration');
             }}
             onStartStage={handleStartStage}
+            onStartOocyteImpression={handleStartOocyteImpression}
           />
         )}
 
@@ -388,7 +449,7 @@ function App() {
         )}
       </main>
 
-      {/* <Chatbot /> */}
+      {/* Chatbot hidden — {canUseChatbot() && <Chatbot />} */}
 
       <footer className="App-footer">
         <p>© 2026 Cloudnine Hospital — Fertility Management System</p>

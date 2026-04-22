@@ -57,19 +57,27 @@ export const api = {
 
   // Upload image to S3
   uploadImage: async (uploadUrl, imageFile) => {
-    const response = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: { 
-        'Content-Type': 'image/jpeg',
-        'x-amz-server-side-encryption': 'AES256'
-      },
-      body: imageFile
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to upload image: ${response.status} - ${errorText}`);
+    const contentType = imageFile.type || 'image/jpeg';
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    try {
+      const response = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': contentType,
+          'x-amz-server-side-encryption': 'AES256'
+        },
+        body: imageFile,
+        signal: controller.signal
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to upload image: ${response.status} - ${errorText}`);
+      }
+      return true;
+    } finally {
+      clearTimeout(timeout);
     }
-    return true;
   },
 
   // Get case details
@@ -97,10 +105,24 @@ export const api = {
     return response.json();
   },
 
-  // Get annotated images for a session
-  getAnnotatedImages: async (sessionId) => {
-    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/annotated-images`);
+  // Get annotated images for a session, optionally filtered by stage
+  getAnnotatedImages: async (sessionId, stageType = null) => {
+    const url = stageType
+      ? `${API_BASE_URL}/sessions/${sessionId}/annotated-images?stage_type=${stageType}`
+      : `${API_BASE_URL}/sessions/${sessionId}/annotated-images`;
+    const response = await fetch(url);
     if (!response.ok) throw new Error('Failed to fetch annotated images');
+    return response.json();
+  },
+
+  // Get presigned URL for stage-specific annotated image upload
+  getPresignedUrlForAnnotatedImage: async (sessionId, imageNumber, stageFolder = 'icsi') => {
+    const response = await fetch(`${API_BASE_URL}/presigned-url-icsi-doc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, imageNumber, stageFolder })
+    });
+    if (!response.ok) throw new Error('Failed to get upload URL');
     return response.json();
   },
 
@@ -139,15 +161,27 @@ export const api = {
   },
 
   // List recent sessions
-  listSessions: async (limit = 10) => {
-    const response = await fetch(`${API_BASE_URL}/sessions?limit=${limit}`);
+  listSessions: async (limit = 50, userCenter = '', isAdmin = false, centerFilter = '') => {
+    const params = new URLSearchParams({ limit });
+    if (!isAdmin && userCenter) params.append('user_center', userCenter);
+    if (isAdmin) {
+      params.append('is_admin', 'true');
+      if (centerFilter) params.append('center', centerFilter);
+    }
+    const response = await fetch(`${API_BASE_URL}/sessions?${params}`);
     if (!response.ok) throw new Error('Failed to fetch sessions');
     return response.json();
   },
 
   // Search sessions by MPEID or Session ID
-  searchSessions: async (query) => {
-    const response = await fetch(`${API_BASE_URL}/sessions?search=${encodeURIComponent(query)}`);
+  searchSessions: async (query, userCenter = '', isAdmin = false, centerFilter = '') => {
+    const params = new URLSearchParams({ search: query });
+    if (!isAdmin && userCenter) params.append('user_center', userCenter);
+    if (isAdmin) {
+      params.append('is_admin', 'true');
+      if (centerFilter) params.append('center', centerFilter);
+    }
+    const response = await fetch(`${API_BASE_URL}/sessions?${params}`);
     if (!response.ok) throw new Error('Failed to search sessions');
     return response.json();
   },
@@ -296,6 +330,124 @@ export const api = {
     }
   },
 
+  // ===== EMBRYO GRADING =====
+  // Trigger AI grading for an oocyte image
+  gradeEmbryo: async (imageId, sessionId) => {
+    const response = await fetch(`${API_BASE_URL}/embryo-grading`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageId, sessionId })
+    });
+    if (!response.ok) throw new Error('AI grading failed');
+    return response.json();
+  },
+
+  // Save embryologist manual grade
+  saveManualGrade: async (imageId, sessionId, gradeData) => {
+    const userInfo = await getUserInfo();
+    const response = await fetch(`${API_BASE_URL}/embryo-grading/manual`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageId, sessionId, ...gradeData, ...userInfo })
+    });
+    if (!response.ok) throw new Error('Failed to save grade');
+    return response.json();
+  },
+
+  // ===== FERTILIZATION CHECK (DAY 1) =====
+  saveFertilizationData: async (sessionId, data) => {
+    const response = await fetch(`${API_BASE_URL}/case/${sessionId}/fertilization-check`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) throw new Error('Failed to save fertilization data');
+    return response.json();
+  },
+  getFertilizationData: async (sessionId) => {
+    const response = await fetch(`${API_BASE_URL}/case/${sessionId}/fertilization-check`);
+    if (!response.ok) throw new Error('Failed to fetch fertilization data');
+    return response.json();
+  },
+
+  // ===== CLEAVAGE / BLASTOCYST STAGE DATA =====
+  saveEmbryoStageData: async (sessionId, stageKey, data) => {
+    const response = await fetch(`${API_BASE_URL}/case/${sessionId}/embryo-stage/${stageKey}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) throw new Error('Failed to save embryo stage data');
+    return response.json();
+  },
+  getEmbryoStageData: async (sessionId, stageKey) => {
+    const response = await fetch(`${API_BASE_URL}/case/${sessionId}/embryo-stage/${stageKey}`);
+    if (!response.ok) throw new Error('Failed to fetch embryo stage data');
+    return response.json();
+  },
+
+  // ===== ICSI/IVF STAGE =====
+  saveICSIStageData: async (sessionId, data) => {
+    const response = await fetch(`${API_BASE_URL}/case/${sessionId}/icsi-stage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) throw new Error('Failed to save ICSI stage data');
+    return response.json();
+  },
+
+  getICSIStageData: async (sessionId) => {
+    const response = await fetch(`${API_BASE_URL}/case/${sessionId}/icsi-stage`);
+    if (!response.ok) throw new Error('Failed to fetch ICSI stage data');
+    return response.json();
+  },
+
+  // ===== SPERM PREPARATION REMARK =====
+  saveSpermPreparationRemark: async (sessionId, remark) => {
+    const response = await fetch(`${API_BASE_URL}/case/${sessionId}/sperm-preparation`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remark })
+    });
+    if (!response.ok) throw new Error('Failed to save remark');
+    return response.json();
+  },
+
+  getSpermPreparationRemark: async (sessionId) => {
+    const response = await fetch(`${API_BASE_URL}/case/${sessionId}/sperm-preparation`);
+    if (!response.ok) throw new Error('Failed to fetch remark');
+    return response.json();
+  },
+
+  // ===== OOCYTE IMPRESSION =====
+  // Get presigned URL for oocyte impression microscopic image upload
+  getPresignedUrlForOocyteImpression: async (sessionId, imageNumber) => {
+    const response = await fetch(`${API_BASE_URL}/presigned-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, stage: 'denudation', imageNumber })
+    });
+    if (!response.ok) throw new Error('Failed to get upload URL');
+    return response.json();
+  },
+
+  // Save oocyte impression remark
+  saveOocyteImpressionRemark: async (sessionId, remark) => {
+    const response = await fetch(`${API_BASE_URL}/case/${sessionId}/oocyte-impression`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remark })
+    });
+    if (!response.ok) throw new Error('Failed to save remark');
+    return response.json();
+  },
+
+  // Get oocyte impression data (images + remark)
+  getOocyteImpression: async (sessionId) => {
+    const response = await fetch(`${API_BASE_URL}/case/${sessionId}/oocyte-impression`);
+    if (!response.ok) throw new Error('Failed to fetch oocyte impression data');
+    return response.json();
+  },
+
   // Get audit logs
   getAuditLogs: async (filters) => {
     const params = new URLSearchParams();
@@ -305,6 +457,7 @@ export const api = {
     if (filters.stage) params.append('stage', filters.stage);
     if (filters.userEmail) params.append('user_email', filters.userEmail);
     if (filters.sessionId) params.append('session_id', filters.sessionId);
+    if (filters.center) params.append('center', filters.center);
     params.append('limit', '500');
     
     const response = await fetch(`${API_BASE_URL}/audit-logs?${params}`);

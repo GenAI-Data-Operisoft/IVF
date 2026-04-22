@@ -16,18 +16,20 @@ def lambda_handler(event, context):
         body = json.loads(event['body'])
         session_id = body['sessionId']
         image_number = body.get('imageNumber', 1)
+        # stageFolder allows different stages to use separate S3 prefixes
+        stage_folder = body.get('stageFolder', 'icsi')
         
         # Generate S3 key for original image
         timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-        s3_key = f'icsi-injected-original/{session_id}/image_{image_number}_{timestamp}.jpg'
+        s3_key = f'{stage_folder}-injected-original/{session_id}/image_{image_number}_{timestamp}.jpg'
         
         # Generate presigned URL for upload (valid for 10 minutes)
+        # No ContentType constraint — frontend compresses to JPEG but mobile may vary
         upload_url = s3_client.generate_presigned_url(
             'put_object',
             Params={
                 'Bucket': BUCKET_NAME,
                 'Key': s3_key,
-                'ContentType': 'image/jpeg',
                 'ServerSideEncryption': 'AES256'
             },
             ExpiresIn=600

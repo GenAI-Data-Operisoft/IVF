@@ -17,6 +17,7 @@ STAGE_FOLDERS = {
     'denudation': 'denudation',
     'male_sample_collection': 'male-sample-collection',
     'icsi': 'icsi',
+    'fertilization_check': 'fertilization-check',
     'culture': 'culture'
 }
 
@@ -67,6 +68,36 @@ def lambda_handler(event, context):
                 })
             }
         
+        # ICSI documentation / annotated image upload — no stage field
+        # stageFolder determines the S3 prefix for stage-specific image separation
+        if 'stage' not in body:
+            session_id = body['sessionId']
+            image_number = body.get('imageNumber', 1)
+            stage_folder = body.get('stageFolder', 'icsi')
+            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            s3_key = f'{stage_folder}-injected-original/{session_id}/image_{image_number}_{timestamp}.jpg'
+            upload_url = s3_client.generate_presigned_url(
+                'put_object',
+                Params={
+                    'Bucket': BUCKET_NAME,
+                    'Key': s3_key,
+                    'ServerSideEncryption': 'AES256',
+                },
+                ExpiresIn=600
+            )
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({
+                    'uploadUrl': upload_url,
+                    's3Key': s3_key,
+                    'bucket': BUCKET_NAME
+                })
+            }
+
         # Original upload URL generation code
         session_id = body['sessionId']
         stage = body['stage']
@@ -98,9 +129,9 @@ def lambda_handler(event, context):
         case = response['Item']
         
         # Check if stage allows uploads (allow retry for failed and completed stages)
-        stage_status = case['stages'][stage]['status']
+        stage_info = case.get('stages', {}).get(stage, {})
+        stage_status = stage_info.get('status', 'pending')  # default pending for new stages on old cases
         # Allow uploads for: pending, in_progress, failed, and completed (for retry)
-        # Only block if explicitly marked as something else
         allowed_statuses = ['pending', 'in_progress', 'failed', 'completed']
         if stage_status not in allowed_statuses:
             return {
@@ -116,14 +147,15 @@ def lambda_handler(event, context):
         timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
         s3_key = f"{STAGE_FOLDERS[stage]}/{session_id}/image_{image_number}_{timestamp}.jpg"
         
-        # Generate pre-signed URL for PUT operation with required encryption
+        # Generate pre-signed URL for PUT operation.
+        # ServerSideEncryption must be included so the signature satisfies the bucket policy
+        # which denies any PutObject without x-amz-server-side-encryption: AES256.
         presigned_url = s3_client.generate_presigned_url(
             'put_object',
             Params={
                 'Bucket': BUCKET_NAME,
                 'Key': s3_key,
-                'ContentType': 'image/jpeg',
-                'ServerSideEncryption': 'AES256'
+                'ServerSideEncryption': 'AES256',
             },
             ExpiresIn=URL_EXPIRATION
         )

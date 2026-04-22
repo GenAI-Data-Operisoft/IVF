@@ -16,13 +16,18 @@ if [ -z "$LAMBDA_FILE" ] || [ -z "$FUNCTION_NAME" ]; then
   exit 1
 fi
 
-# Get the base filename without path or extension to use as the handler module name
 BASE_NAME=$(basename "$LAMBDA_FILE" .py)
 HANDLER="${BASE_NAME}.lambda_handler"
 ZIP_FILE="/tmp/${BASE_NAME}.zip"
+LAMBDA_DIR="$(dirname "$LAMBDA_FILE")"
 
 echo "Packaging $LAMBDA_FILE..."
-zip -j "$ZIP_FILE" "$LAMBDA_FILE"
+# Always include audit_helper.py alongside the main file (shared dependency)
+if [ -f "${LAMBDA_DIR}/audit_helper.py" ]; then
+  zip -j "$ZIP_FILE" "$LAMBDA_FILE" "${LAMBDA_DIR}/audit_helper.py"
+else
+  zip -j "$ZIP_FILE" "$LAMBDA_FILE"
+fi
 
 echo "Deploying to $FUNCTION_NAME..."
 aws lambda update-function-code \

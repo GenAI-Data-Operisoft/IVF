@@ -4,8 +4,11 @@
 import React from 'react';
 import usePermissionStore from '../store/permissionStore';
 
-function Home({ onStartCapture, onViewSessions, onViewMetrics, onViewAuditLog, onViewUserManagement, userRole }) {
+function Home({ onStartCapture, onViewSessions, onViewMetrics, onViewAuditLog, onViewUserManagement, userRole, user }) {
   const { canView, canEdit } = usePermissionStore();
+
+  const userCenter = user?.centers?.[0] || '';
+  const centerShort = userCenter.replace('Cloudnine Hospital ', '');
 
   const canStartCapture  = canEdit('ivfCapture');
   const canViewSessions  = canView('sessions');
@@ -29,6 +32,13 @@ function Home({ onStartCapture, onViewSessions, onViewMetrics, onViewAuditLog, o
           />
         </div>
         <p className="home-subtitle">Select an option below to get started</p>
+
+        {userCenter && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#e0e7ff', color: '#4338ca', padding: '5px 14px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600, marginBottom: '1.5rem' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            {userCenter}
+          </div>
+        )}
 
         <div className="home-options">
 

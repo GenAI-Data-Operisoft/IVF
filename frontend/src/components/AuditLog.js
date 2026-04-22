@@ -99,7 +99,8 @@ function AuditLog({ onBack }) {
     action: '',
     stage: '',
     userEmail: '',
-    sessionId: ''
+    sessionId: '',
+    center: ''
   });
   const [actionCounts, setActionCounts] = useState({});
   const [totalCount, setTotalCount] = useState(0);
@@ -133,17 +134,18 @@ function AuditLog({ onBack }) {
     setFilters({
       startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       endDate: new Date().toISOString().split('T')[0],
-      action: '', stage: '', userEmail: '', sessionId: ''
+      action: '', stage: '', userEmail: '', sessionId: '', center: ''
     });
   };
 
   const handleExportCSV = () => {
     if (logs.length === 0) { alert('No logs to export'); return; }
-    const headers = ['Timestamp', 'Action', 'Stage', 'User', 'Email', 'Session ID', 'LLM Result', 'Details'];
+    const headers = ['Timestamp', 'Action', 'Stage', 'Center', 'User', 'Email', 'Session ID', 'LLM Result', 'Details'];
     const rows = logs.map(log => [
       new Date(log.timestamp).toLocaleString(),
       log.action,
       log.stage || '-',
+      log.center || '-',
       log.user_name || log.userName || 'N/A',
       log.user_email || log.userEmail || 'N/A',
       log.session_id || log.sessionId || 'N/A',
@@ -297,6 +299,15 @@ function AuditLog({ onBack }) {
             <label>Session ID</label>
             <input type="text" placeholder="Search by session..." value={filters.sessionId} onChange={(e) => handleFilterChange('sessionId', e.target.value)} />
           </div>
+          <div className="filter-group">
+            <label>Hospital Center</label>
+            <select value={filters.center} onChange={(e) => handleFilterChange('center', e.target.value)}>
+              <option value="">All Centers</option>
+              <option value="Cloudnine Hospital Malleswaram">Malleswaram</option>
+              <option value="Cloudnine Hospital Malad">Malad</option>
+              <option value="Cloudnine Hospital Ludhiana">Ludhiana</option>
+            </select>
+          </div>
         </div>
         <div className="filter-actions">
           <button onClick={handleApplyFilters} className="btn-primary">Apply Filters</button>
@@ -323,6 +334,7 @@ function AuditLog({ onBack }) {
                   <th>Timestamp</th>
                   <th>Action</th>
                   <th>Stage</th>
+                  <th>Center</th>
                   <th>User</th>
                   <th>Session ID</th>
                   <th>LLM Result</th>
@@ -340,6 +352,13 @@ function AuditLog({ onBack }) {
                     </td>
                     <td className="stage-cell">
                       {log.stage ? <code>{log.stage.replace(/_/g, ' ')}</code> : <span style={{ color: '#999' }}>-</span>}
+                    </td>
+                    <td>
+                      {log.center ? (
+                        <span style={{ background: '#e0e7ff', color: '#4338ca', padding: '2px 8px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                          📍 {log.center.replace('Cloudnine Hospital ', '')}
+                        </span>
+                      ) : <span style={{ color: '#999' }}>-</span>}
                     </td>
                     <td className="user-cell">
                       <div className="user-name">{log.user_name || log.userName || 'Unknown'}</div>

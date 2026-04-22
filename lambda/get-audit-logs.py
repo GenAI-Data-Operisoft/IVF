@@ -52,6 +52,7 @@ def lambda_handler(event, context):
         stage_filter = params.get('stage')
         user_email = params.get('user_email')
         session_id = params.get('session_id')
+        center_filter = params.get('center')
         limit = min(int(params.get('limit', 100)), 500)
 
         # Build the DynamoDB filter expression dynamically based on which
@@ -85,6 +86,11 @@ def lambda_handler(event, context):
             filter_expressions.append('#session_id = :session_id')
             expression_values[':session_id'] = session_id
             expression_names['#session_id'] = 'session_id'
+
+        if center_filter:
+            filter_expressions.append('#center = :center')
+            expression_values[':center'] = center_filter
+            expression_names['#center'] = 'center'
 
         scan_kwargs = {'Limit': limit}
         if filter_expressions:

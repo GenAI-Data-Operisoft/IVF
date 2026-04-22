@@ -15,7 +15,8 @@ STAGE_TABLE_MAP = {
     'denudation': os.environ.get('DENUDATION_TABLE', 'IVF-DenudationExtractions'),
     'male-sample-collection': os.environ.get('MALE_SAMPLE_TABLE', 'IVF-MaleSampleCollectionExtractions'),
     'icsi': os.environ.get('ICSI_TABLE', 'IVF-ICSIExtractions'),
-    'culture': os.environ.get('CULTURE_TABLE', 'IVF-CultureExtractions')
+    'culture': os.environ.get('CULTURE_TABLE', 'IVF-CultureExtractions'),
+    'fertilization-check': os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
 }
 
 def extract_with_converse_api(image_bytes, stage, model_id, model_name, image_number=1):
@@ -34,17 +35,14 @@ def extract_with_converse_api(image_bytes, stage, model_id, model_name, image_nu
         # - First upload (image_1): Male patient label
         # - Second upload (image_2): Female patient label
         # Each upload is processed independently
-        if image_number == 1:
-            data_instruction = """
-    This is a MALE SAMPLE COLLECTION stage - Male Patient Upload.
-    Extract the MALE patient's information from this label.
+        data_instruction = """
+    This is a SPERM PREPARATION stage - extract the MALE patient's information from this label.
     Put the data in male_name and male_mpeid fields.
     Leave female_name and female_mpeid as null.
     """
-        else:  # image_number == 2
-            data_instruction = """
-    This is a MALE SAMPLE COLLECTION stage - Female Patient Upload.
-    Extract the FEMALE patient's information from this label.
+    elif stage == 'fertilization-check':
+        data_instruction = """
+    This is a FERTILIZATION CHECK stage - extract the FEMALE patient's information from this label.
     Put the data in female_name and female_mpeid fields.
     Leave male_name and male_mpeid as null.
     """
@@ -97,7 +95,9 @@ def extract_with_converse_api(image_bytes, stage, model_id, model_name, image_nu
     - Any dates if visible
     
     IMPORTANT: The ID prefix is "ID" (capital I and capital D), NOT "10" (one-zero).
-    If you see what looks like "10-" followed by numbers, it's actually "ID-" (the letters I and D).
+    ONLY correct the 2-character prefix: if the label shows "10-" as the very first two characters before the dash, read it as "ID-".
+    Do NOT modify any digits that come AFTER the "ID-" prefix — preserve them exactly as written on the label.
+    Example: "10-102308917" on label = "ID-102308917" (only the prefix changes, the number 102308917 stays intact).
     {digit_guidance}
     
     {data_instruction}
@@ -113,7 +113,7 @@ def extract_with_converse_api(image_bytes, stage, model_id, model_name, image_nu
     Rules:
     - Convert all names to UPPERCASE
     - For MPEIDs, use format "ID-" followed by numbers (e.g., "ID-2569824")
-    - If you see "10-" it's likely "ID-" (common OCR mistake)
+    - If the MPEID starts with "10-" (only the first two chars before the dash), replace with "ID-". Never remove digits after the prefix.
     - Remove any extra spaces
     - If information is not visible or unclear, use null
     - For ICSI stage: Prioritize the label with "ID-" prefix format
@@ -286,17 +286,14 @@ def extract_text_with_bedrock(image_bytes, stage, model_config, image_number=1):
         # - First upload (image_1): Male patient label
         # - Second upload (image_2): Female patient label
         # Each upload is processed independently
-        if image_number == 1:
-            data_instruction = """
-    This is a MALE SAMPLE COLLECTION stage - Male Patient Upload.
-    Extract the MALE patient's information from this label.
+        data_instruction = """
+    This is a SPERM PREPARATION stage - extract the MALE patient's information from this label.
     Put the data in male_name and male_mpeid fields.
     Leave female_name and female_mpeid as null.
     """
-        else:  # image_number == 2
-            data_instruction = """
-    This is a MALE SAMPLE COLLECTION stage - Female Patient Upload.
-    Extract the FEMALE patient's information from this label.
+    elif stage == 'fertilization-check':
+        data_instruction = """
+    This is a FERTILIZATION CHECK stage - extract the FEMALE patient's information from this label.
     Put the data in female_name and female_mpeid fields.
     Leave male_name and male_mpeid as null.
     """
@@ -349,7 +346,9 @@ def extract_text_with_bedrock(image_bytes, stage, model_config, image_number=1):
     - Any dates if visible
     
     IMPORTANT: The ID prefix is "ID" (capital I and capital D), NOT "10" (one-zero).
-    If you see what looks like "10-" followed by numbers, it's actually "ID-" (the letters I and D).
+    ONLY correct the 2-character prefix: if the label shows "10-" as the very first two characters before the dash, read it as "ID-".
+    Do NOT modify any digits that come AFTER the "ID-" prefix — preserve them exactly as written on the label.
+    Example: "10-102308917" on label = "ID-102308917" (only the prefix changes, the number 102308917 stays intact).
     {digit_guidance}
     
     {data_instruction}
@@ -365,7 +364,7 @@ def extract_text_with_bedrock(image_bytes, stage, model_config, image_number=1):
     Rules:
     - Convert all names to UPPERCASE
     - For MPEIDs, use format "ID-" followed by numbers (e.g., "ID-2569824")
-    - If you see "10-" it's likely "ID-" (common OCR mistake)
+    - If the MPEID starts with "10-" (only the first two chars before the dash), replace with "ID-". Never remove digits after the prefix.
     - Remove any extra spaces
     - If information is not visible or unclear, use null
     - For ICSI stage: Prioritize the label with "ID-" prefix format

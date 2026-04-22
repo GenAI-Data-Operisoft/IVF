@@ -1,74 +1,144 @@
 /**
  * Registration Form — collects male and female patient details to start a new IVF case.
- * Supports manual entry and automatic label scanning via Bedrock OCR.
+ * Flow: user types Name + MPID manually first, then scans wristband to verify.
  */
 import React, { useState } from 'react';
 import { api } from '../api';
+import usePermissionStore from '../store/permissionStore';
 
-function RegistrationForm({ onComplete, onViewSessions, onBack }) {
+const IconCamera = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+    <circle cx="12" cy="13" r="4"/>
+  </svg>
+);
+
+const IconUpload = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+    <polyline points="21 15 16 10 5 21"/>
+  </svg>
+);
+
+const IconBack = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="15 18 9 12 15 6"/>
+  </svg>
+);
+
+const IconCheck = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </svg>
+);
+
+const IconWarning = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+  </svg>
+);
+
+function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
+  const { canUploadImage } = usePermissionStore();
+  const showUpload = canUploadImage();
+
+  const userCenter = user?.centers?.[0] || '';
+  const isAdmin = user?.role === 'admin';
+
+  const ALL_CENTERS = [
+    'Cloudnine Hospital Malleswaram',
+    'Cloudnine Hospital Malad',
+    'Cloudnine Hospital Ludhiana',
+  ];
+
+  const centerOptions = isAdmin ? ALL_CENTERS : [];
+  const defaultCenter = isAdmin ? '' : userCenter;
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [scanningMale, setScanningMale] = useState(false);
   const [scanningFemale, setScanningFemale] = useState(false);
   const [maleScanPreview, setMaleScanPreview] = useState(null);
   const [femaleScanPreview, setFemaleScanPreview] = useState(null);
+
+  // Verification state per patient: null | { status: 'match'|'mismatch', scannedName, scannedMpeid }
+  const [maleVerification, setMaleVerification] = useState(null);
+  const [femaleVerification, setFemaleVerification] = useState(null);
+
   const [formData, setFormData] = useState({
     maleName: '',
     maleMpeid: '',
-    maleDob: '',
-    maleLastName: '',
     femaleName: '',
     femaleMpeid: '',
-    femaleDob: '',
-    femaleLastName: '',
     procedureDate: new Date().toISOString().split('T')[0],
+    doctorName: '',
+    center: defaultCenter,
     modelId: 'qwen.qwen3-vl-235b-a22b',
-    modelName: 'Qwen3 VL 235B ⭐ (Best OCR)'
+    modelName: 'Qwen3 VL 235B ⭐ (Best OCR)',
   });
 
-  // Handles label scan for either male or female patient.
-  // Sends the captured image to Bedrock OCR and auto-fills the matching form fields.
+  const normalizeMpeid = (mpeid) => {
+    if (!mpeid) return mpeid;
+    const trimmed = mpeid.trim().toUpperCase();
+    if (trimmed.startsWith('ID-')) return trimmed;
+    if (trimmed.toLowerCase().startsWith('id-')) return 'ID-' + trimmed.substring(3);
+    if (/^\d+$/.test(trimmed)) return 'ID-' + trimmed;
+    return trimmed;
+  };
+
+  const normalizeName = (name) => {
+    if (!name) return name;
+    return name.trim().toUpperCase().replace(/\s+/g, ' ');
+  };
+
+  // Compare typed vs scanned — normalize both before comparing
+  const compareFields = (typed, scanned) => {
+    if (!scanned) return true; // if OCR didn't extract, don't flag mismatch
+    return normalizeName(typed) === normalizeName(scanned);
+  };
+
   const handleScanLabel = async (e, patientType) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const isScanning = patientType === 'male' ? setScanningMale : setScanningFemale;
-    const setPreview = patientType === 'male' ? setMaleScanPreview : setFemaleScanPreview;
+    const isMale = patientType === 'male';
+    const setScanning = isMale ? setScanningMale : setScanningFemale;
+    const setPreview = isMale ? setMaleScanPreview : setFemaleScanPreview;
+    const setVerification = isMale ? setMaleVerification : setFemaleVerification;
+    const typedName = isMale ? formData.maleName : formData.femaleName;
+    const typedMpeid = isMale ? formData.maleMpeid : formData.femaleMpeid;
 
-    // Show image preview immediately
     setPreview(URL.createObjectURL(file));
-    isScanning(true);
+    setScanning(true);
+    setVerification(null);
     setError(null);
 
     try {
       const result = await api.scanPatientLabel(file, patientType, formData.modelId);
-
       if (result.success && result.extracted) {
         const d = result.extracted;
-        if (patientType === 'male') {
-          setFormData(prev => ({
-            ...prev,
-            maleName:     d.name      || prev.maleName,
-            maleLastName: d.last_name || prev.maleLastName,
-            maleMpeid:    d.mpeid     || prev.maleMpeid,
-            maleDob:      d.dob       || prev.maleDob,
-          }));
-        } else {
-          setFormData(prev => ({
-            ...prev,
-            femaleName:     d.name      || prev.femaleName,
-            femaleLastName: d.last_name || prev.femaleLastName,
-            femaleMpeid:    d.mpeid     || prev.femaleMpeid,
-            femaleDob:      d.dob       || prev.femaleDob,
-          }));
-        }
+        const scannedName = [d.name, d.last_name].filter(Boolean).join(' ').trim();
+        const scannedMpeid = d.mpeid || '';
+
+        const nameMatch = compareFields(typedName, scannedName);
+        const mpeidMatch = compareFields(normalizeMpeid(typedMpeid), normalizeMpeid(scannedMpeid));
+        const allMatch = nameMatch && mpeidMatch;
+
+        setVerification({
+          status: allMatch ? 'match' : 'mismatch',
+          scannedName,
+          scannedMpeid: normalizeMpeid(scannedMpeid),
+          nameMatch,
+          mpeidMatch,
+        });
       } else {
-        setError(result.error || 'Could not read label. Please fill in manually.');
+        setError(result.error || 'Could not read label. Please try again.');
       }
-    } catch (err) {
-      setError('Scan failed. Please fill in manually.');
+    } catch {
+      setError('Scan failed. Please try again.');
     } finally {
-      isScanning(false);
+      setScanning(false);
     }
   };
 
@@ -76,29 +146,29 @@ function RegistrationForm({ onComplete, onViewSessions, onBack }) {
     e.preventDefault();
     setLoading(true);
     setError(null);
-
     try {
-      const caseData = {
-        male_patient: {
-          name: formData.maleName,
-          mpeid: normalizeMpeid(formData.maleMpeid),
-          dob: formData.maleDob,
-          last_name: formData.maleLastName
-        },
-        female_patient: {
-          name: formData.femaleName,
-          mpeid: normalizeMpeid(formData.femaleMpeid),
-          dob: formData.femaleDob,
-          last_name: formData.femaleLastName
-        },
-        procedure_start_date: formData.procedureDate,
-        model_config: {
-          model_id: formData.modelId,
-          model_name: formData.modelName
+      let caseCenter = '';
+      if (!isAdmin) {
+        try {
+          const { fetchUserAttributes } = await import('aws-amplify/auth');
+          const attrs = await fetchUserAttributes();
+          const centersRaw = attrs['custom:centers'];
+          if (centersRaw) {
+            const parsed = JSON.parse(centersRaw);
+            caseCenter = Array.isArray(parsed) ? (parsed[0] || '') : String(parsed);
+          }
+        } catch (err) {
+          console.error('Failed to fetch user center:', err);
         }
-      };
-
-      const result = await api.registerCase(caseData);
+      }
+      const result = await api.registerCase({
+        male_patient:   { name: normalizeName(formData.maleName),   mpeid: normalizeMpeid(formData.maleMpeid) },
+        female_patient: { name: normalizeName(formData.femaleName), mpeid: normalizeMpeid(formData.femaleMpeid) },
+        procedure_start_date: formData.procedureDate,
+        doctor_name: formData.doctorName,
+        center: caseCenter,
+        model_config: { model_id: formData.modelId, model_name: formData.modelName },
+      });
       onComplete(result.sessionId);
     } catch (err) {
       setError(err.message);
@@ -107,301 +177,314 @@ function RegistrationForm({ onComplete, onViewSessions, onBack }) {
     }
   };
 
-  const normalizeMpeid = (mpeid) => {
-    if (!mpeid) return mpeid;
-    
-    const trimmed = mpeid.trim().toUpperCase();
-    
-    // If it already starts with ID-, return as is
-    if (trimmed.startsWith('ID-')) {
-      return trimmed;
-    }
-    
-    // If it starts with id- (lowercase), convert to uppercase
-    if (trimmed.toLowerCase().startsWith('id-')) {
-      return 'ID-' + trimmed.substring(3);
-    }
-    
-    // If it's just numbers, add ID- prefix
-    if (/^\d+$/.test(trimmed)) {
-      return 'ID-' + trimmed;
-    }
-    
-    // For other formats (M12345, F67890, etc.), return as is
-    return trimmed;
+  const inputStyle = {
+    width: '100%',
+    padding: '0.65rem 0.85rem',
+    border: '1.5px solid #e2e8f0',
+    borderRadius: '8px',
+    fontSize: '0.9rem',
+    outline: 'none',
+    boxSizing: 'border-box',
+    transition: 'border-color 0.2s',
+    background: '#fff',
   };
 
-  const normalizeName = (name) => {
-    if (!name) return name;
-    
-    // Convert to uppercase and trim
-    const normalized = name.trim().toUpperCase();
-    
-    // Remove multiple spaces between words
-    return normalized.replace(/\s+/g, ' ');
+  const labelStyle = {
+    display: 'block',
+    marginBottom: '0.35rem',
+    fontWeight: 600,
+    fontSize: '0.82rem',
+    color: '#374151',
+    letterSpacing: '0.2px',
   };
 
-  const handleNameChange = (field, value) => {
-    setFormData({...formData, [field]: value});
+  const fieldStyle = { marginBottom: '0.85rem' };
+
+  const VerificationResult = ({ verification, patientType, onOverride }) => {
+    if (!verification) return null;
+    const isMatch = verification.status === 'match';
+    return (
+      <div style={{
+        marginTop: '0.75rem',
+        padding: '0.85rem 1rem',
+        borderRadius: '10px',
+        border: `1.5px solid ${isMatch ? '#22c55e' : '#f59e0b'}`,
+        background: isMatch ? '#f0fdf4' : '#fffbeb',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: isMatch ? 0 : '0.6rem', fontWeight: 600, fontSize: '0.85rem', color: isMatch ? '#16a34a' : '#b45309' }}>
+          {isMatch ? <IconCheck /> : <IconWarning />}
+          {isMatch ? 'Wristband verified — details match' : 'Mismatch detected — please review'}
+        </div>
+        {!isMatch && (
+          <div style={{ fontSize: '0.82rem', color: '#78350f' }}>
+            {!verification.nameMatch && (
+              <div style={{ marginBottom: '3px' }}>
+                Name on label: <strong>{verification.scannedName || '—'}</strong>
+              </div>
+            )}
+            {!verification.mpeidMatch && (
+              <div style={{ marginBottom: '6px' }}>
+                MPID on label: <strong>{verification.scannedMpeid || '—'}</strong>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+              <button type="button" onClick={() => onOverride(verification)} style={{
+                padding: '0.35rem 0.8rem', fontSize: '0.8rem', borderRadius: '6px',
+                border: '1.5px solid #f59e0b', background: '#fef3c7', color: '#92400e',
+                cursor: 'pointer', fontWeight: 600,
+              }}>
+                Use scanned values
+              </button>
+              <button type="button" onClick={() => {
+                if (patientType === 'male') setMaleVerification({ ...verification, status: 'match' });
+                else setFemaleVerification({ ...verification, status: 'match' });
+              }} style={{
+                padding: '0.35rem 0.8rem', fontSize: '0.8rem', borderRadius: '6px',
+                border: '1.5px solid #94a3b8', background: '#f8fafc', color: '#475569',
+                cursor: 'pointer', fontWeight: 600,
+              }}>
+                Keep my values
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
-  const handleNameBlur = (field) => {
-    // Auto-format name to uppercase on blur
-    const currentValue = formData[field];
-    const normalized = normalizeName(currentValue);
-    if (normalized !== currentValue) {
-      setFormData({...formData, [field]: normalized});
-    }
+  const ScanBox = ({ patientType, scanning, preview, verification, typedName, typedMpeid }) => {
+    const canScan = typedName.trim().length > 0 && typedMpeid.trim().length > 0;
+    const setVerification = patientType === 'male' ? setMaleVerification : setFemaleVerification;
+
+    const handleOverride = (v) => {
+      if (patientType === 'male') {
+        setFormData(prev => ({
+          ...prev,
+          maleName: v.scannedName || prev.maleName,
+          maleMpeid: v.scannedMpeid || prev.maleMpeid,
+        }));
+        setMaleVerification({ ...v, status: 'match' });
+      } else {
+        setFormData(prev => ({
+          ...prev,
+          femaleName: v.scannedName || prev.femaleName,
+          femaleMpeid: v.scannedMpeid || prev.femaleMpeid,
+        }));
+        setFemaleVerification({ ...v, status: 'match' });
+      }
+    };
+
+    return (
+      <div style={{
+        marginBottom: '1rem',
+        padding: '0.85rem 1rem',
+        background: canScan ? 'linear-gradient(135deg, #f0f4ff 0%, #f5f0ff 100%)' : '#f8fafc',
+        borderRadius: '10px',
+        border: `1.5px dashed ${canScan ? '#667eea' : '#cbd5e1'}`,
+        opacity: canScan ? 1 : 0.7,
+        transition: 'all 0.2s',
+      }}>
+        <p style={{ margin: '0 0 0.5rem', fontSize: '0.82rem', color: canScan ? '#555' : '#94a3b8', fontWeight: 500 }}>
+          📷 Scan wristband to verify
+          {!canScan && <span style={{ marginLeft: '6px', fontSize: '0.78rem', color: '#94a3b8' }}>(enter Name & MPID first)</span>}
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+          <label style={{ cursor: canScan ? 'pointer' : 'not-allowed' }}>
+            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+              onChange={(e) => handleScanLabel(e, patientType)} disabled={scanning || !canScan} />
+            <span className="btn-secondary" style={{
+              display: 'inline-flex', alignItems: 'center', gap: '5px',
+              padding: '0.45rem 0.9rem', fontSize: '0.85rem',
+              opacity: canScan ? 1 : 0.5, pointerEvents: canScan ? 'auto' : 'none',
+            }}>
+              <IconCamera /> {scanning ? 'Scanning...' : 'Take Photo'}
+            </span>
+          </label>
+          {showUpload && (
+            <label style={{ cursor: canScan ? 'pointer' : 'not-allowed' }}>
+              <input type="file" accept="image/*" style={{ display: 'none' }}
+                onChange={(e) => handleScanLabel(e, patientType)} disabled={scanning || !canScan} />
+              <span className="btn-secondary" style={{
+                display: 'inline-flex', alignItems: 'center', gap: '5px',
+                padding: '0.45rem 0.9rem', fontSize: '0.85rem',
+                opacity: canScan ? 1 : 0.5, pointerEvents: canScan ? 'auto' : 'none',
+              }}>
+                <IconUpload /> Upload Image
+              </span>
+            </label>
+          )}
+          {scanning && <span style={{ fontSize: '0.8rem', color: '#667eea', fontStyle: 'italic' }}>Reading label...</span>}
+          {preview && !scanning && (
+            <img src={preview} alt="Scanned label" style={{ height: '44px', borderRadius: '6px', border: '1px solid #ddd', objectFit: 'cover' }} />
+          )}
+        </div>
+        <VerificationResult
+          verification={verification}
+          patientType={patientType}
+          onOverride={handleOverride}
+        />
+      </div>
+    );
   };
 
-  const handleMpeidChange = (field, value) => {
-    // Update the form data
-    setFormData({...formData, [field]: value});
-  };
-
-  const handleMpeidBlur = (field) => {
-    // Auto-format on blur (when user leaves the field)
-    const currentValue = formData[field];
-    const normalized = normalizeMpeid(currentValue);
-    if (normalized !== currentValue) {
-      setFormData({...formData, [field]: normalized});
-    }
-  };
+  // Block submit if a scan was done but still shows mismatch
+  const hasMismatch =
+    (maleVerification && maleVerification.status === 'mismatch') ||
+    (femaleVerification && femaleVerification.status === 'mismatch');
 
   return (
-    <div className="registration-form">
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1rem' }}>
-        <button onClick={onBack || onViewSessions} className="btn-secondary" style={{ padding: '7px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-          Back
+    <div className="registration-form" style={{ maxWidth: 'none', padding: '2rem' }}>
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
+        <button onClick={onBack || onViewSessions} className="btn-secondary"
+          style={{ padding: '7px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+          <IconBack /> Back
         </button>
-        <h2 style={{ margin: 0 }}>Register New IVF Case</h2>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 700, color: '#1a202c', textAlign: 'left' }}>Register New IVF Case</h2>
+          <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Enter patient details, then scan wristband to verify</p>
+        </div>
       </div>
-      
-      {error && <div className="error-message">{error}</div>}
+
+      {error && (
+        <div style={{ background: '#ffebee', color: '#c62828', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.85rem', borderLeft: '4px solid #f44336' }}>
+          {error}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit}>
-        <div className="form-section">
-          <h3>Male Patient Information</h3>
 
-          {/* Scan label option — staff can capture the wristband/label to auto-fill fields */}
-          <div style={{ marginBottom: '1rem', padding: '0.75rem 1rem', background: '#f0f4ff', borderRadius: '8px', border: '1px dashed #667eea' }}>
-            <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#555' }}>
-              Scan patient label to auto-fill details
-            </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-              <label style={{ cursor: 'pointer' }}>
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  style={{ display: 'none' }}
-                  onChange={(e) => handleScanLabel(e, 'male')}
-                  disabled={scanningMale}
-                />
-                <span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                  {scanningMale ? 'Scanning...' : 'Take Photo'}
-                </span>
-              </label>
-              <label style={{ cursor: 'pointer' }}>
-                <input
-                  type="file"
-                  accept="image/*"
-                  style={{ display: 'none' }}
-                  onChange={(e) => handleScanLabel(e, 'male')}
-                  disabled={scanningMale}
-                />
-                <span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                  Upload Image
-                </span>
-              </label>
-              {scanningMale && <span style={{ fontSize: '0.85rem', color: '#667eea' }}>Reading label...</span>}
-              {maleScanPreview && !scanningMale && (
-                <img src={maleScanPreview} alt="Scanned label" style={{ height: '48px', borderRadius: '4px', border: '1px solid #ddd' }} />
-              )}
+        {/* Two-column patient grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+
+          {/* Male Patient */}
+          <div style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: '14px', padding: '1.5rem', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.25rem' }}>
+              <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.9rem', fontWeight: 700, flexShrink: 0 }}>M</div>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#1a202c' }}>Male Patient</h3>
             </div>
-          </div>
-          <div className="form-row">
-            <div className="input-group">
-              <input
-                type="text"
-                placeholder="First Name *"
+
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Full Name <span style={{ color: '#e11d48' }}>*</span></label>
+              <input style={inputStyle} type="text" placeholder="e.g. HIMANSHU SHARMA"
                 value={formData.maleName}
-                onChange={(e) => handleNameChange('maleName', e.target.value)}
-                onBlur={() => handleNameBlur('maleName')}
-                required
-              />
-              <small className="input-hint">
-                {formData.maleName && normalizeName(formData.maleName) !== formData.maleName && (
-                  <span className="auto-format-hint">→ Will be saved as: {normalizeName(formData.maleName)}</span>
-                )}
-              </small>
+                onChange={(e) => { setFormData({ ...formData, maleName: e.target.value }); setMaleVerification(null); }}
+                onBlur={() => setFormData(p => ({ ...p, maleName: normalizeName(p.maleName) }))}
+                required />
             </div>
-            <div className="input-group">
-              <input
-                type="text"
-                placeholder="Last Name"
-                value={formData.maleLastName}
-                onChange={(e) => handleNameChange('maleLastName', e.target.value)}
-                onBlur={() => handleNameBlur('maleLastName')}
-              />
-              <small className="input-hint">
-                {formData.maleLastName && normalizeName(formData.maleLastName) !== formData.maleLastName && (
-                  <span className="auto-format-hint">→ Will be saved as: {normalizeName(formData.maleLastName)}</span>
-                )}
-              </small>
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="input-group">
-              <input
-                type="text"
-                placeholder="MPEID *"
+
+            <div style={fieldStyle}>
+              <label style={labelStyle}>MPID <span style={{ color: '#e11d48' }}>*</span></label>
+              <input style={inputStyle} type="text" placeholder="e.g. ID-102192605"
                 value={formData.maleMpeid}
-                onChange={(e) => handleMpeidChange('maleMpeid', e.target.value)}
-                onBlur={() => handleMpeidBlur('maleMpeid')}
-                required
-              />
-              <small className="input-hint">
-                Enter ID number (e.g., 35697344 or ID-35697344)
-                {formData.maleMpeid && normalizeMpeid(formData.maleMpeid) !== formData.maleMpeid && (
-                  <span className="auto-format-hint"> → Will be saved as: {normalizeMpeid(formData.maleMpeid)}</span>
-                )}
-              </small>
+                onChange={(e) => { setFormData({ ...formData, maleMpeid: e.target.value }); setMaleVerification(null); }}
+                onBlur={() => setFormData(p => ({ ...p, maleMpeid: normalizeMpeid(p.maleMpeid) }))}
+                required />
+              <small style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px', display: 'block' }}>Enter number only or with ID- prefix</small>
             </div>
-            <input
-              type="date"
-              placeholder="Date of Birth"
-              value={formData.maleDob}
-              onChange={(e) => setFormData({...formData, maleDob: e.target.value})}
+
+            <ScanBox
+              patientType="male"
+              scanning={scanningMale}
+              preview={maleScanPreview}
+              verification={maleVerification}
+              typedName={formData.maleName}
+              typedMpeid={formData.maleMpeid}
             />
           </div>
-        </div>
 
-        <div className="form-section">
-          <h3>Female Patient Information</h3>
-
-          {/* Scan label option for female patient */}
-          <div style={{ marginBottom: '1rem', padding: '0.75rem 1rem', background: '#f0f4ff', borderRadius: '8px', border: '1px dashed #667eea' }}>
-            <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#555' }}>
-              Scan patient label to auto-fill details
-            </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-              <label style={{ cursor: 'pointer' }}>
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  style={{ display: 'none' }}
-                  onChange={(e) => handleScanLabel(e, 'female')}
-                  disabled={scanningFemale}
-                />
-                <span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                  {scanningFemale ? 'Scanning...' : 'Take Photo'}
-                </span>
-              </label>
-              <label style={{ cursor: 'pointer' }}>
-                <input
-                  type="file"
-                  accept="image/*"
-                  style={{ display: 'none' }}
-                  onChange={(e) => handleScanLabel(e, 'female')}
-                  disabled={scanningFemale}
-                />
-                <span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                  Upload Image
-                </span>
-              </label>
-              {scanningFemale && <span style={{ fontSize: '0.85rem', color: '#667eea' }}>Reading label...</span>}
-              {femaleScanPreview && !scanningFemale && (
-                <img src={femaleScanPreview} alt="Scanned label" style={{ height: '48px', borderRadius: '4px', border: '1px solid #ddd' }} />
-              )}
+          {/* Female Patient */}
+          <div style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: '14px', padding: '1.5rem', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.25rem' }}>
+              <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'linear-gradient(135deg, #f093fb, #f5576c)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.9rem', fontWeight: 700, flexShrink: 0 }}>F</div>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#1a202c' }}>Female Patient</h3>
             </div>
-          </div>
-          <div className="form-row">
-            <div className="input-group">
-              <input
-                type="text"
-                placeholder="First Name *"
+
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Full Name <span style={{ color: '#e11d48' }}>*</span></label>
+              <input style={inputStyle} type="text" placeholder="e.g. PRACHI JAIN"
                 value={formData.femaleName}
-                onChange={(e) => handleNameChange('femaleName', e.target.value)}
-                onBlur={() => handleNameBlur('femaleName')}
-                required
-              />
-              <small className="input-hint">
-                {formData.femaleName && normalizeName(formData.femaleName) !== formData.femaleName && (
-                  <span className="auto-format-hint">→ Will be saved as: {normalizeName(formData.femaleName)}</span>
-                )}
-              </small>
+                onChange={(e) => { setFormData({ ...formData, femaleName: e.target.value }); setFemaleVerification(null); }}
+                onBlur={() => setFormData(p => ({ ...p, femaleName: normalizeName(p.femaleName) }))}
+                required />
             </div>
-            <div className="input-group">
-              <input
-                type="text"
-                placeholder="Last Name"
-                value={formData.femaleLastName}
-                onChange={(e) => handleNameChange('femaleLastName', e.target.value)}
-                onBlur={() => handleNameBlur('femaleLastName')}
-              />
-              <small className="input-hint">
-                {formData.femaleLastName && normalizeName(formData.femaleLastName) !== formData.femaleLastName && (
-                  <span className="auto-format-hint">→ Will be saved as: {normalizeName(formData.femaleLastName)}</span>
-                )}
-              </small>
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="input-group">
-              <input
-                type="text"
-                placeholder="MPEID *"
+
+            <div style={fieldStyle}>
+              <label style={labelStyle}>MPID <span style={{ color: '#e11d48' }}>*</span></label>
+              <input style={inputStyle} type="text" placeholder="e.g. ID-102192605"
                 value={formData.femaleMpeid}
-                onChange={(e) => handleMpeidChange('femaleMpeid', e.target.value)}
-                onBlur={() => handleMpeidBlur('femaleMpeid')}
-                required
-              />
-              <small className="input-hint">
-                Enter ID number (e.g., 35697344 or ID-35697344)
-                {formData.femaleMpeid && normalizeMpeid(formData.femaleMpeid) !== formData.femaleMpeid && (
-                  <span className="auto-format-hint"> → Will be saved as: {normalizeMpeid(formData.femaleMpeid)}</span>
-                )}
-              </small>
+                onChange={(e) => { setFormData({ ...formData, femaleMpeid: e.target.value }); setFemaleVerification(null); }}
+                onBlur={() => setFormData(p => ({ ...p, femaleMpeid: normalizeMpeid(p.femaleMpeid) }))}
+                required />
+              <small style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px', display: 'block' }}>Enter number only or with ID- prefix</small>
             </div>
-            <input
-              type="date"
-              placeholder="Date of Birth"
-              value={formData.femaleDob}
-              onChange={(e) => setFormData({...formData, femaleDob: e.target.value})}
+
+            <ScanBox
+              patientType="female"
+              scanning={scanningFemale}
+              preview={femaleScanPreview}
+              verification={femaleVerification}
+              typedName={formData.femaleName}
+              typedMpeid={formData.femaleMpeid}
             />
           </div>
         </div>
 
-        <div className="form-section">
-          <h3>Procedure Details</h3>
-          <div className="form-row">
-            <input
-              type="date"
-              value={formData.procedureDate}
-              onChange={(e) => setFormData({...formData, procedureDate: e.target.value})}
-              required
-            />
+        {/* Mismatch warning above submit */}
+        {hasMismatch && (
+          <div style={{ background: '#fffbeb', border: '1.5px solid #f59e0b', borderRadius: '10px', padding: '0.85rem 1rem', marginBottom: '1.25rem', fontSize: '0.85rem', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <IconWarning /> Resolve the wristband mismatch above before registering.
+          </div>
+        )}
+
+        {/* Procedure Details */}
+        <div style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: '14px', padding: '1.5rem', marginBottom: '2rem', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <h3 style={{ margin: '0 0 1.25rem', fontSize: '1.1rem', fontWeight: 700, color: '#1a202c', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#667eea" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Procedure Details
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+            <div>
+              <label style={labelStyle}>Procedure Date <span style={{ color: '#e11d48' }}>*</span></label>
+              <input style={inputStyle} type="date"
+                value={formData.procedureDate}
+                onChange={(e) => setFormData({ ...formData, procedureDate: e.target.value })}
+                required />
+            </div>
+            <div>
+              <label style={labelStyle}>Doctor Name <span style={{ color: '#e11d48' }}>*</span></label>
+              <input style={inputStyle} type="text" placeholder="e.g. Dr. Sharma"
+                value={formData.doctorName}
+                onChange={(e) => setFormData({ ...formData, doctorName: e.target.value })}
+                required />
+            </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '1rem' }}>
-          <button type="submit" disabled={loading} className="btn-primary">
-            {loading ? 'Registering...' : 'Register Case'}
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+          <button type="submit" disabled={loading || hasMismatch} className="btn-primary"
+            style={{ padding: '0.85rem 2.5rem', fontSize: '1rem', display: 'inline-flex', alignItems: 'center', gap: '8px', opacity: hasMismatch ? 0.5 : 1 }}>
+            {loading ? (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
+                Registering...
+              </>
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                Register Case
+              </>
+            )}
           </button>
-          <button type="button" onClick={onViewSessions} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          <button type="button" onClick={onViewSessions} className="btn-secondary"
+            style={{ padding: '0.85rem 2rem', fontSize: '1rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
             View Previous Sessions
           </button>
         </div>
+
       </form>
     </div>
   );

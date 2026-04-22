@@ -104,6 +104,9 @@ def log_audit(
             audit_entry['error_message'] = error_message
         if metadata:
             audit_entry['details'] = metadata  # Use 'details' for metadata
+            # Also extract center from metadata if present
+            if isinstance(metadata, dict) and metadata.get('center'):
+                audit_entry['center'] = metadata['center']
         if ip_address:
             audit_entry['ip_address'] = ip_address
         

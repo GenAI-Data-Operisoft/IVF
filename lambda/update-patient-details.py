@@ -20,9 +20,9 @@ def lambda_handler(event, context):
         male_patient = body.get('male_patient', {})
         female_patient = body.get('female_patient', {})
         
-        # Validate required fields
-        required_male_fields = ['name', 'last_name', 'mpeid']
-        required_female_fields = ['name', 'last_name', 'mpeid']
+        # Validate required fields (name and mpeid required; last_name optional for backward compat)
+        required_male_fields = ['name', 'mpeid']
+        required_female_fields = ['name', 'mpeid']
         
         for field in required_male_fields:
             if not male_patient.get(field):
@@ -69,13 +69,11 @@ def lambda_handler(event, context):
         # Prepare new patient details
         new_male = {
             'name': male_patient['name'],
-            'last_name': male_patient['last_name'],
             'mpeid': male_patient['mpeid'],
             'dob': male_patient.get('dob', '')
         }
         new_female = {
             'name': female_patient['name'],
-            'last_name': female_patient['last_name'],
             'mpeid': female_patient['mpeid'],
             'dob': female_patient.get('dob', '')
         }

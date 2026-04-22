@@ -14,9 +14,10 @@ STAGE_VALIDATION_RULES = {
     'label_validation': ['female_name', 'female_mpeid'],
     'oocyte_collection': ['female_name', 'female_mpeid'],
     'denudation': ['female_name', 'female_mpeid'],
-    'male_sample_collection': ['male_name', 'male_mpeid', 'female_name', 'female_mpeid'],  # Both patients - tube has labels on both sides
+    'male_sample_collection': ['male_name', 'male_mpeid'],
     'icsi': ['female_name', 'female_mpeid'],
-    'culture': ['female_name', 'female_mpeid']
+    'culture': ['female_name', 'female_mpeid'],
+    'fertilization_check': ['female_name', 'female_mpeid'],
 }
 
 def lambda_handler(event, context):
@@ -44,70 +45,22 @@ def lambda_handler(event, context):
                 source_arn = record['eventSourceARN']
                 stage = extract_stage_from_arn(source_arn)
                 
+                # For fertilization_check, the ARN maps to label_validation table
+                # Distinguish by checking the s3_path field
+                if stage == 'label_validation' and 's3_path' in new_image:
+                    s3_path = new_image['s3_path']['S']
+                    if 'fertilization-check/' in s3_path:
+                        stage = 'fertilization_check'
+                
                 # Get extracted data
                 extracted_data = parse_dynamodb_map(new_image['extracted_data']['M'])
                 
-                # For male_sample_collection, we need to wait for both images
-                # and merge their data before validation
+                # For male_sample_collection, validate each image independently (male patient only)
+                # No need to wait for both images
                 if stage == 'male_sample_collection':
-                    # Get all extractions for this session and stage
-                    table_name = source_arn.split('/')[-3]
-                    table = dynamodb.Table(table_name)
-                    
-                    print(f"Querying for session: {session_id}")
-                    response = table.query(
-                        IndexName='SessionIdIndex',
-                        KeyConditionExpression='sessionId = :sid',
-                        ExpressionAttributeValues={':sid': session_id}
-                    )
-                    
-                    extractions = response.get('Items', [])
-                    print(f"Found {len(extractions)} total extractions")
-                    
-                    # Get only the MOST RECENT extraction for each image number
-                    # This handles revalidation scenarios where old failed extractions exist
-                    latest_by_image = {}
-                    for extraction in extractions:
-                        img_num = extraction.get('image_number')
-                        extracted_at = extraction.get('extracted_at', '')
-                        
-                        if img_num not in latest_by_image or extracted_at > latest_by_image[img_num].get('extracted_at', ''):
-                            latest_by_image[img_num] = extraction
-                    
-                    print(f"Latest extractions by image: {list(latest_by_image.keys())}")
-                    
-                    # Check if we have both images (image 1 and image 2)
-                    if 1 not in latest_by_image or 2 not in latest_by_image:
-                        print(f"Waiting for both images for male_sample_collection. Current images: {list(latest_by_image.keys())}")
-                        continue  # Wait for the other image
-                    
-                    print(f"Both images found! Proceeding with validation")
-                    
-                    try:
-                        # Merge data from the LATEST extraction of each image
-                        print(f"Merging data from latest extractions")
-                        merged_data = {}
-                        
-                        # Image 1 has male data
-                        img1_data = latest_by_image[1].get('extracted_data', {})
-                        merged_data['male_name'] = img1_data.get('male_name')
-                        merged_data['male_mpeid'] = img1_data.get('male_mpeid')
-                        print(f"Image 1 (male) data: male_name={merged_data['male_name']}, male_mpeid={merged_data['male_mpeid']}")
-                        
-                        # Image 2 has female data
-                        img2_data = latest_by_image[2].get('extracted_data', {})
-                        merged_data['female_name'] = img2_data.get('female_name')
-                        merged_data['female_mpeid'] = img2_data.get('female_mpeid')
-                        print(f"Image 2 (female) data: female_name={merged_data['female_name']}, female_mpeid={merged_data['female_mpeid']}")
-                        
-                        # Use only the latest extractions for updating
-                        extractions = list(latest_by_image.values())
-                        
-                        print(f"Merged data: {merged_data}")
-                        extracted_data = merged_data
-                    except Exception as merge_error:
-                        print(f"ERROR merging data: {str(merge_error)}")
-                        raise
+                    # Each image validates male patient details independently
+                    # image_number 1 = Collection Container, image_number 2 = Process Sperm Sample
+                    pass  # extracted_data already has male_name/male_mpeid from OCR
                 
                 # Get registered case data
                 print(f"Fetching case data for session: {session_id}")
@@ -132,27 +85,11 @@ def lambda_handler(event, context):
                     print(f"ERROR during validation: {str(val_error)}")
                     raise
                 
-                # Update extraction record(s) with validation result
+                # Update extraction record with validation result
                 print(f"Updating extraction records with validation result")
                 try:
-                    if stage == 'male_sample_collection':
-                        # Update both extraction records
-                        table_name = source_arn.split('/')[-3]
-                        table = dynamodb.Table(table_name)
-                        for extraction in extractions:
-                            print(f"Updating extraction: {extraction['extractionId']}")
-                            table.update_item(
-                                Key={'extractionId': extraction['extractionId']},
-                                UpdateExpression='SET validation_result = :result, validated_at = :timestamp',
-                                ExpressionAttributeValues={
-                                    ':result': validation_result,
-                                    ':timestamp': datetime.utcnow().isoformat()
-                                }
-                            )
-                        print(f"Updated {len(extractions)} extraction records")
-                    else:
-                        update_extraction_validation(source_arn, extraction_id, validation_result)
-                        print(f"Updated extraction record: {extraction_id}")
+                    update_extraction_validation(source_arn, extraction_id, validation_result)
+                    print(f"Updated extraction record: {extraction_id}")
                 except Exception as update_error:
                     print(f"ERROR updating extraction records: {str(update_error)}")
                     raise
@@ -160,18 +97,11 @@ def lambda_handler(event, context):
                 # Update case record
                 print(f"Updating case record for session: {session_id}")
                 try:
-                    # Aggregate token usage for this stage
-                    if stage == 'male_sample_collection':
-                        # For male sample collection, aggregate from both images
-                        table_name = source_arn.split('/')[-3]
-                        table = dynamodb.Table(table_name)
-                        token_totals = aggregate_tokens_for_stage(table, session_id)
-                    else:
-                        # For single image stages, get tokens from current extraction
-                        token_totals = {
-                            'input_tokens': new_image.get('input_tokens', {}).get('N', '0'),
-                            'output_tokens': new_image.get('output_tokens', {}).get('N', '0')
-                        }
+                    # Get tokens from current extraction
+                    token_totals = {
+                        'input_tokens': new_image.get('input_tokens', {}).get('N', '0'),
+                        'output_tokens': new_image.get('output_tokens', {}).get('N', '0')
+                    }
                     
                     update_case_validation(session_id, stage, validation_result, token_totals)
                     print(f"Case record updated successfully with tokens: {token_totals}")
@@ -448,7 +378,10 @@ def extract_stage_from_arn(arn):
         'IVF-ICSIExtractions': 'icsi',
         'IVF-CultureExtractions': 'culture'
     }
-    return stage_map.get(table_name, 'unknown')
+    stage = stage_map.get(table_name, 'unknown')
+    # fertilization_check shares the label_validation table — distinguish by s3 key prefix in event
+    # The stage is already resolved correctly via the extraction record's s3_path
+    return stage
 
 def parse_dynamodb_map(dynamodb_map):
     """

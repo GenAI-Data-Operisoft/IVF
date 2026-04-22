@@ -19,6 +19,33 @@ from audit_helper import log_audit, extract_user_info, ACTIONS
 
 dynamodb = boto3.resource('dynamodb')
 cases_table = dynamodb.Table(os.environ.get('CASES_TABLE', 'IVF-Cases'))
+cognito = boto3.client('cognito-idp', region_name=os.environ.get('AWS_REGION', 'ap-south-1'))
+USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
+
+
+def get_user_center(event):
+    """Get the user's assigned center from Cognito using their username from the JWT token."""
+    try:
+        claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
+        # Try sub (UUID) first, then email
+        username = claims.get('sub') or claims.get('cognito:username') or claims.get('email')
+        if not username or not USER_POOL_ID:
+            print(f"No username found in claims: {list(claims.keys())}")
+            return ''
+        print(f"Looking up center for user: {username}")
+        response = cognito.admin_get_user(UserPoolId=USER_POOL_ID, Username=username)
+        attrs = {a['Name']: a['Value'] for a in response.get('UserAttributes', [])}
+        centers_raw = attrs.get('custom:centers', '')
+        print(f"Centers raw value: {centers_raw}")
+        if centers_raw:
+            parsed = json.loads(centers_raw)
+            center = parsed[0] if isinstance(parsed, list) and parsed else str(parsed)
+            print(f"Resolved center: {center}")
+            return center
+        return ''
+    except Exception as e:
+        print(f"Could not get user center: {e}")
+        return ''
 
 
 def lambda_handler(event, context):
@@ -42,6 +69,10 @@ def lambda_handler(event, context):
         # Each case gets a unique UUID as its session identifier
         session_id = str(uuid.uuid4())
 
+        # Get center: use value sent by frontend (read from Cognito at submit time)
+        # Fall back to Cognito lookup via JWT claims if available
+        center = body.get('center', '') or get_user_center(event)
+
         # Build the full case record that will be stored in DynamoDB.
         # Names are stored in uppercase to make comparison consistent during validation.
         case_record = {
@@ -50,15 +81,15 @@ def lambda_handler(event, context):
                 'name': body['male_patient']['name'].upper(),
                 'mpeid': body['male_patient']['mpeid'],
                 'dob': body['male_patient'].get('dob'),
-                'last_name': body['male_patient'].get('last_name', '').upper()
             },
             'female_patient': {
                 'name': body['female_patient']['name'].upper(),
                 'mpeid': body['female_patient']['mpeid'],
                 'dob': body['female_patient'].get('dob'),
-                'last_name': body['female_patient'].get('last_name', '').upper()
             },
             'procedure_start_date': body['procedure_start_date'],
+            'doctor_name': body.get('doctor_name', ''),
+            'center': center,
             # The AI model used for OCR validation is selected at registration time
             'model_config': body.get('model_config', {
                 'model_id': 'anthropic.claude-sonnet-4-5-20250929-v1:0',
@@ -66,15 +97,16 @@ def lambda_handler(event, context):
             }),
             'created_at': datetime.utcnow().isoformat(),
             'current_stage': 'label_validation',
-            # All 7 stages start as pending. male_sample_collection requires 2 images
-            # (one for each patient side of the tube), all others require 1.
+            # All stages start as pending.
             'stages': {
                 'label_validation':      {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
                 'oocyte_collection':     {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
                 'denudation':            {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
                 'male_sample_collection':{'status': 'pending', 'images_required': 2, 'images_uploaded': 0},
                 'icsi':                  {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
+                'fertilization_check':   {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
                 'icsi_documentation':    {'status': 'pending', 'images_required': 0, 'images_uploaded': 0},
+                'blastocyst':            {'status': 'pending', 'images_required': 0, 'images_uploaded': 0},
                 'culture':               {'status': 'pending', 'images_required': 1, 'images_uploaded': 0}
             },
             # Token usage fields are initialized to zero and updated after each AI call.
@@ -118,7 +150,9 @@ def lambda_handler(event, context):
             ip_address=ip_address,
             metadata={
                 'message': f"Case registered for {body['male_patient']['name']} & {body['female_patient']['name']}",
-                'procedure_date': body['procedure_start_date']
+                'procedure_date': body['procedure_start_date'],
+                'doctor_name': body.get('doctor_name', ''),
+                'center': center
             }
         )
 

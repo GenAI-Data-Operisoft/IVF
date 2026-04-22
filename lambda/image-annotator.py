@@ -38,10 +38,27 @@ def lambda_handler(event, context):
         
         # Extract session ID from key
         # Format: icsi-injected-original/{sessionId}/image_{n}_{timestamp}.jpg
+        # or: {stage-type}-injected-original/{sessionId}/image_{n}_{timestamp}.jpg
         parts = key.split('/')
-        if len(parts) < 3 or parts[0] != 'icsi-injected-original':
+        if len(parts) < 3 or not parts[0].endswith('-injected-original'):
             print(f"Invalid key format: {key}")
             return {'statusCode': 400, 'body': 'Invalid key format'}
+        
+        # Derive stage_type from folder prefix
+        # icsi-injected-original -> icsi_documentation
+        # oocyte-impression-injected-original -> denudation
+        # fertilization-check-injected-original -> fertilization_check
+        # cleavage-injected-original -> icsi_documentation (cleavage)
+        # blastocyst-injected-original -> blastocyst
+        folder_prefix = parts[0].replace('-injected-original', '')
+        stage_type_map = {
+            'icsi': 'icsi_documentation',
+            'oocyte-impression': 'denudation',
+            'fertilization-check': 'fertilization_check',
+            'cleavage': 'cleavage',
+            'blastocyst': 'blastocyst',
+        }
+        stage_type = stage_type_map.get(folder_prefix, folder_prefix)
         
         session_id = parts[1]
         filename = parts[2]
@@ -65,6 +82,18 @@ def lambda_handler(event, context):
         response = s3_client.get_object(Bucket=bucket, Key=key)
         image_bytes = response['Body'].read()
         
+        # Convert to JPEG if needed (handles HEIC, PNG, WebP from mobile devices)
+        try:
+            test_img = Image.open(BytesIO(image_bytes))
+            if test_img.format not in ('JPEG', 'JPG') or test_img.mode != 'RGB':
+                print(f"Converting from {test_img.format}/{test_img.mode} to JPEG/RGB")
+                rgb_img = test_img.convert('RGB')
+                buf = BytesIO()
+                rgb_img.save(buf, format='JPEG', quality=92)
+                image_bytes = buf.getvalue()
+        except Exception as conv_err:
+            print(f"Format conversion warning (continuing): {conv_err}")
+        
         # Annotate image
         print(f"Annotating image with patient information")
         annotated_image_bytes = annotate_image(
@@ -74,7 +103,7 @@ def lambda_handler(event, context):
         )
         
         # Upload annotated image to S3
-        annotated_key = key.replace('icsi-injected-original', 'icsi-injected-annotated')
+        annotated_key = key.replace('-injected-original', '-injected-annotated')
         print(f"Uploading annotated image to: s3://{bucket}/{annotated_key}")
         
         s3_client.put_object(
@@ -89,6 +118,7 @@ def lambda_handler(event, context):
         image_record = {
             'imageId': str(uuid.uuid4()),
             'sessionId': session_id,
+            'stage_type': stage_type,
             'oocyte_number': image_number,
             'original_s3_path': f's3://{bucket}/{key}',
             'annotated_s3_path': f's3://{bucket}/{annotated_key}',
