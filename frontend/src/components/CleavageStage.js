@@ -7,6 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import usePermissionStore from '../store/permissionStore';
+import StageCapture from './StageCapture';
 
 const IconUpload = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -252,48 +253,261 @@ function SectionHeader({ num, title, subtitle, badge }) {
   );
 }
 
-// Sub 2: Embryo Transfer
-function EmbryoTransferSection({ sessionId, caseData, showUpload }) {
+// Sample Validation + Annotated Details (two-column, reusable for Day 3, Day 5/6, FET)
+function SampleValidationWithAnnotation({ sessionId, caseData, showUpload, stageKey, onViewStatus }) {
+  // Use 'culture' stage ID for presigned URL — it's in STAGE_FOLDERS on the backend
+  const STAGE_OBJ = { id: 'culture', name: 'Sample Validation', images: 1 };
+  const cultureStatus = caseData?.stages?.culture?.status;
+  const [validated, setValidated] = React.useState(cultureStatus === 'completed' || cultureStatus === 'failed');
+  const [annotUploading, setAnnotUploading] = React.useState(false);
+  const [annotProcessing, setAnnotProcessing] = React.useState(false);
+  const [annotatedImages, setAnnotatedImages] = React.useState([]);
+  const [error, setError] = React.useState(null);
+
+  const stageType = stageKey + '_sample';
+
+  React.useEffect(() => {
+    if (validated) {
+      api.getAnnotatedImages(sessionId, stageType).then(d => setAnnotatedImages(d.images || [])).catch(() => {});
+    }
+  }, [validated, sessionId, stageType]);
+
+  const handleAnnotUpload = async (e) => {
+    const rawFile = e.target.files[0]; if (!rawFile) return;
+    setAnnotUploading(true); setError(null);
+    try {
+      const file = await compressImg(rawFile);
+      const num = annotatedImages.length + 1;
+      const { uploadUrl } = await api.getPresignedUrlForAnnotatedImage(sessionId, num, stageKey + '-sample');
+      await api.uploadImage(uploadUrl, file);
+      setAnnotProcessing(true);
+      let attempts = 0;
+      const poll = async () => {
+        try {
+          const data = await api.getAnnotatedImages(sessionId, stageType);
+          const img = data.images.find(i => i.oocyte_number === num);
+          if (img && img.annotation_status === 'completed') { setAnnotatedImages(data.images); setAnnotProcessing(false); return; }
+          attempts++; if (attempts < 45) setTimeout(poll, 2000); else { setError('Annotation timeout.'); setAnnotProcessing(false); }
+        } catch (err) { setError(err.message); setAnnotProcessing(false); }
+      };
+      poll();
+    } catch (err) { setError(err.message); } finally { setAnnotUploading(false); }
+  };
+
+  return (
+    <div>
+      {error && <div style={{ background: '#ffebee', color: '#c62828', padding: '0.6rem 0.85rem', borderRadius: '8px', marginBottom: '0.75rem', fontSize: '0.82rem' }}>{error}</div>}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+        {/* LEFT: Sample validation */}
+        <div>
+          <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#374151', marginBottom: '0.4rem' }}>Dish Label Validation</p>
+          <div style={{ fontSize: '0.75rem', color: '#374151', marginBottom: '0.6rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.4rem 0.6rem' }}>
+            <strong>Female:</strong> {caseData.female_patient.name} · {caseData.female_patient.mpeid}
+          </div>
+          <StageCapture sessionId={sessionId} caseData={caseData} stage={STAGE_OBJ} onComplete={() => setValidated(true)} onViewStatus={onViewStatus} embedded={true} />
+        </div>
+        {/* RIGHT: Annotated microscopic image */}
+        <div style={{ opacity: validated ? 1 : 0.4, pointerEvents: validated ? 'auto' : 'none' }}>
+          <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#374151', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            Annotated Patient Details
+            {!validated && <span style={{ background: '#f1f5f9', color: '#94a3b8', padding: '1px 6px', borderRadius: '6px', fontSize: '0.68rem' }}>🔒 Validate first</span>}
+          </p>
+          <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.6rem' }}>Upload microscopic image — patient details annotated on it</p>
+          {!annotProcessing && (
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
+              {showUpload && (<label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAnnotUpload} disabled={annotUploading || !validated} /><span className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}><IconUpload />{annotUploading ? '...' : 'Upload'}</span></label>)}
+              <label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleAnnotUpload} disabled={annotUploading || !validated} /><span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}><IconCamera />{annotUploading ? '...' : 'Photo'}</span></label>
+            </div>
+          )}
+          {annotProcessing && (<div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0.6rem', background: '#f0f4ff', borderRadius: '6px', marginBottom: '0.6rem' }}><img src="https://d1nmtja0c4ok3x.cloudfront.net/IVFgif.gif" alt="" style={{ width: '20px', height: '20px' }} /><span style={{ fontSize: '0.8rem', color: '#667eea', fontWeight: 600 }}>Annotating...</span></div>)}
+          {annotatedImages.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(100px,1fr))', gap: '0.4rem' }}>
+              {annotatedImages.map((img, i) => (
+                <div key={img.imageId || i} style={{ border: '1.5px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
+                  <img src={img.download_url} alt="" style={{ width: '100%', height: '70px', objectFit: 'cover', display: 'block' }} />
+                  <div style={{ padding: '2px 4px', display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#64748b' }}>
+                    <span>{img.oocyte_number}</span>
+                    <button onClick={() => window.open(img.download_url, '_blank')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#667eea', padding: 0, fontSize: '0.65rem' }}>↓</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {annotatedImages.length === 0 && !annotProcessing && validated && <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: 0 }}>Upload microscopic image above</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Sub 2: Embryo Transfer — two-column: left=tube validation, right=annotated details (unlocks after validation)
+function EmbryoTransferSection({ sessionId, caseData, showUpload, stageKey }) {
   const [uploads, setUploads] = React.useState([]);
   const [uploading, setUploading] = React.useState(false);
+  const [validating, setValidating] = React.useState(false);
+  const [validationResults, setValidationResults] = React.useState([]);
   const [error, setError] = React.useState(null);
+  const [annotUploading, setAnnotUploading] = React.useState(false);
+  const [annotProcessing, setAnnotProcessing] = React.useState(false);
+  const [annotatedImages, setAnnotatedImages] = React.useState([]);
+
+  const allPassed = validationResults.length > 0 && validationResults.every(r => r.status === 'pass');
+
+  React.useEffect(() => {
+    if (allPassed) {
+      const st = stageKey === 'blastocyst' ? 'blastocyst_transfer' : 'cleavage_transfer';
+      api.getAnnotatedImages(sessionId, st).then(d => setAnnotatedImages(d.images || [])).catch(() => {});
+    }
+  }, [allPassed, sessionId, stageKey]);
 
   const handleUpload = async (e) => {
     const rawFile = e.target.files[0]; if (!rawFile) return;
     setUploading(true); setError(null);
     try {
       const file = await compressImg(rawFile);
-      const previewUrl = URL.createObjectURL(file);
-      const imageNumber = uploads.length + 1;
-      const { uploadUrl } = await api.getPresignedUrl(sessionId, 'icsi', imageNumber);
-      await api.uploadImage(uploadUrl, file);
-      setUploads(prev => [...prev, { imageNumber, previewUrl }]);
+      setUploads(prev => [...prev, { file, previewUrl: URL.createObjectURL(file), imageNumber: prev.length + 1 }]);
     } catch (err) { setError(err.message); } finally { setUploading(false); }
+  };
+
+  const handleRemove = (idx) => {
+    setUploads(prev => prev.filter((_, i) => i !== idx).map((u, i) => ({ ...u, imageNumber: i + 1 })));
+  };
+
+  const handleStartValidation = async () => {
+    if (uploads.length === 0) { setError('Capture at least one tube image first.'); return; }
+    setValidating(true); setError(null);
+    const results = [];
+    try {
+      for (const u of uploads) {
+        const { uploadUrl, s3Key } = await api.getPresignedUrl(sessionId, 'culture', u.imageNumber);
+        await api.uploadImage(uploadUrl, u.file);
+        results.push({ ...u, s3Key, status: 'uploaded' });
+      }
+      let attempts = 0;
+      const poll = async () => {
+        try {
+          const data = await api.getStageExtractions(sessionId, 'culture');
+          const validated = (data.extractions || []).filter(e => e.validation_result);
+          if (validated.length >= uploads.length) {
+            setValidationResults(results.map((r, i) => {
+              const ext = validated.find(e => e.image_number === r.imageNumber) || validated[i];
+              return { ...r, status: ext?.validation_result?.overall_match ? 'pass' : 'fail', validation: ext?.validation_result };
+            }));
+            setValidating(false); return;
+          }
+          attempts++; if (attempts < 45) setTimeout(poll, 2000); else { setError('Validation timeout.'); setValidating(false); }
+        } catch (err) { setError(err.message); setValidating(false); }
+      };
+      poll();
+    } catch (err) { setError(err.message); setValidating(false); }
+  };
+
+  const handleAnnotUpload = async (e) => {
+    const rawFile = e.target.files[0]; if (!rawFile) return;
+    setAnnotUploading(true); setError(null);
+    try {
+      const file = await compressImg(rawFile);
+      const num = annotatedImages.length + 1;
+      const folder = stageKey === 'blastocyst' ? 'blastocyst-transfer' : 'cleavage-transfer';
+      const { uploadUrl } = await api.getPresignedUrlForAnnotatedImage(sessionId, num, folder);
+      await api.uploadImage(uploadUrl, file);
+      setAnnotProcessing(true);
+      let attempts = 0;
+      const st = stageKey === 'blastocyst' ? 'blastocyst_transfer' : 'cleavage_transfer';
+      const poll = async () => {
+        try {
+          const data = await api.getAnnotatedImages(sessionId, st);
+          const img = data.images.find(i => i.oocyte_number === num);
+          if (img && img.annotation_status === 'completed') { setAnnotatedImages(data.images); setAnnotProcessing(false); return; }
+          attempts++; if (attempts < 45) setTimeout(poll, 2000); else { setError('Annotation timeout.'); setAnnotProcessing(false); }
+        } catch (err) { setError(err.message); setAnnotProcessing(false); }
+      };
+      poll();
+    } catch (err) { setError(err.message); } finally { setAnnotUploading(false); }
   };
 
   return (
     <div>
-      <p style={{ fontSize: '0.82rem', color: '#64748b', marginBottom: '0.75rem' }}>
-        Upload tube images with patient name/MPID. Multiple images supported — each stick may have separate details.
-      </p>
       {error && <div style={{ background: '#ffebee', color: '#c62828', padding: '0.6rem 0.85rem', borderRadius: '8px', marginBottom: '0.75rem', fontSize: '0.82rem' }}>{error}</div>}
-      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-        {showUpload && (<label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleUpload} disabled={uploading} /><span className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1rem', fontSize: '0.85rem' }}><IconUpload />{uploading ? 'Uploading...' : 'Upload Tube Image'}</span></label>)}
-        <label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUpload} disabled={uploading} /><span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1rem', fontSize: '0.85rem' }}><IconCamera />{uploading ? '...' : 'Take Photo'}</span></label>
-      </div>
-      {uploads.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(130px,1fr))', gap: '0.75rem' }}>
-          {uploads.map((img, i) => (
-            <div key={i} style={{ border: '1.5px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
-              <img src={img.previewUrl} alt="" style={{ width: '100%', height: '90px', objectFit: 'cover', display: 'block' }} />
-              <div style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#16a34a', textAlign: 'center' }}>✓ Tube {img.imageNumber}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+        {/* LEFT: Tube validation */}
+        <div>
+          <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#374151', marginBottom: '0.4rem' }}>Tube Image Validation</p>
+          <div style={{ fontSize: '0.75rem', color: '#374151', marginBottom: '0.6rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.4rem 0.6rem' }}>
+            <div><strong>M:</strong> {caseData.male_patient.name} · {caseData.male_patient.mpeid}</div>
+            <div><strong>F:</strong> {caseData.female_patient.name} · {caseData.female_patient.mpeid}</div>
+          </div>
+          {validationResults.length === 0 && !validating && (
+            <>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                {showUpload && (<label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleUpload} disabled={uploading} /><span className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}><IconUpload />{uploading ? '...' : 'Upload'}</span></label>)}
+                <label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUpload} disabled={uploading} /><span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}><IconCamera />{uploading ? '...' : 'Photo'}</span></label>
+              </div>
+              {uploads.length > 0 && (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(75px,1fr))', gap: '0.35rem', marginBottom: '0.6rem' }}>
+                    {uploads.map((img, i) => (
+                      <div key={i} style={{ border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden', position: 'relative' }}>
+                        <img src={img.previewUrl} alt="" style={{ width: '100%', height: '55px', objectFit: 'cover', display: 'block' }} />
+                        <button onClick={() => handleRemove(i)} style={{ position: 'absolute', top: '2px', right: '2px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '50%', width: '14px', height: '14px', fontSize: '0.55rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={handleStartValidation} className="btn-primary" style={{ fontSize: '0.8rem', padding: '0.4rem 0.85rem' }}>Start Validation ({uploads.length})</button>
+                </>
+              )}
+              {uploads.length === 0 && <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: 0 }}>No images yet</p>}
+            </>
+          )}
+          {validating && (<div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0.6rem', background: '#f0f4ff', borderRadius: '6px' }}><img src="https://d1nmtja0c4ok3x.cloudfront.net/IVFgif.gif" alt="" style={{ width: '20px', height: '20px' }} /><span style={{ fontSize: '0.8rem', color: '#667eea', fontWeight: 600 }}>Validating...</span></div>)}
+          {validationResults.length > 0 && (
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(70px,1fr))', gap: '0.35rem', marginBottom: '0.5rem' }}>
+                {validationResults.map((r, i) => (
+                  <div key={i} style={{ border: '1.5px solid ' + (r.status === 'pass' ? '#22c55e' : '#f59e0b'), borderRadius: '6px', overflow: 'hidden', background: r.status === 'pass' ? '#f0fdf4' : '#fffbeb' }}>
+                    <img src={r.previewUrl} alt="" style={{ width: '100%', height: '50px', objectFit: 'cover', display: 'block' }} />
+                    <div style={{ padding: '2px', fontSize: '0.65rem', textAlign: 'center', fontWeight: 600, color: r.status === 'pass' ? '#16a34a' : '#92400e' }}>{r.status === 'pass' ? '✓' : '⚠'}</div>
+                  </div>
+                ))}
+              </div>
+              {allPassed && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '0.4rem', fontSize: '0.75rem', color: '#16a34a', fontWeight: 600 }}>✓ All verified</div>}
             </div>
-          ))}
+          )}
         </div>
-      )}
+        {/* RIGHT: Annotated Patient Details */}
+        <div style={{ opacity: allPassed ? 1 : 0.4, pointerEvents: allPassed ? 'auto' : 'none' }}>
+          <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#374151', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            Annotated Patient Details
+            {!allPassed && <span style={{ background: '#f1f5f9', color: '#94a3b8', padding: '1px 6px', borderRadius: '6px', fontSize: '0.68rem' }}>🔒 Validate first</span>}
+          </p>
+          <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.6rem' }}>Upload microscopic image — patient details annotated on it</p>
+          {!annotProcessing && (
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
+              {showUpload && (<label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAnnotUpload} disabled={annotUploading || !allPassed} /><span className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}><IconUpload />{annotUploading ? '...' : 'Upload'}</span></label>)}
+              <label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleAnnotUpload} disabled={annotUploading || !allPassed} /><span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}><IconCamera />{annotUploading ? '...' : 'Photo'}</span></label>
+            </div>
+          )}
+          {annotProcessing && (<div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0.6rem', background: '#f0f4ff', borderRadius: '6px', marginBottom: '0.6rem' }}><img src="https://d1nmtja0c4ok3x.cloudfront.net/IVFgif.gif" alt="" style={{ width: '20px', height: '20px' }} /><span style={{ fontSize: '0.8rem', color: '#667eea', fontWeight: 600 }}>Annotating...</span></div>)}
+          {annotatedImages.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(100px,1fr))', gap: '0.4rem' }}>
+              {annotatedImages.map((img, i) => (
+                <div key={img.imageId || i} style={{ border: '1.5px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
+                  <img src={img.download_url} alt="" style={{ width: '100%', height: '70px', objectFit: 'cover', display: 'block' }} />
+                  <div style={{ padding: '2px 4px', display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#64748b' }}>
+                    <span>{img.oocyte_number}</span>
+                    <button onClick={() => window.open(img.download_url, '_blank')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#667eea', padding: 0, fontSize: '0.65rem' }}>↓</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {annotatedImages.length === 0 && !annotProcessing && allPassed && <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: 0 }}>Upload microscopic image above</p>}
+        </div>
+      </div>
     </div>
   );
 }
+
 
 // Sub 3: Cryopreservation
 function CryopreservationSection({ sessionId, stageKey }) {
@@ -488,9 +702,15 @@ function CleavageStage({ sessionId, caseData, onComplete, onViewStatus, stageTit
 
       {error && <div style={{ background: '#ffebee', color: '#c62828', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.85rem', borderLeft: '4px solid #f44336' }}>{error}</div>}
 
+      {/* Sub 0: Sample Validation + Annotated Details (two-column) */}
+      <div style={card}>
+        <SectionHeader num="1" title="Sample Validation & Annotated Details" subtitle="Validate dish label (female details) and capture annotated microscopic image" />
+        <SampleValidationWithAnnotation sessionId={sessionId} caseData={caseData} showUpload={showUpload} stageKey={stageKey} onViewStatus={onViewStatus} />
+      </div>
+
       {/* Sub 1: Microscopic Embryo Validation */}
       <div style={card}>
-        <SectionHeader num="1" title="Microscopic Embryo Validation" subtitle="Capture annotated embryo images with AI analysis and embryologist grading" />
+        <SectionHeader num="2" title="Microscopic Embryo Validation" subtitle="Capture annotated embryo images with AI analysis and embryologist grading" />
         <p className="info-text">Capture images of embryos from the micromanipulator screen. Images will be automatically annotated with patient information.</p>
         {!processing && (
           <div className="upload-section">
@@ -549,19 +769,19 @@ function CleavageStage({ sessionId, caseData, onComplete, onViewStatus, stageTit
 
       {/* Sub 2: Embryo Transfer */}
       <div style={card}>
-        <SectionHeader num="2" title="Embryo Transfer" subtitle="Upload tube images for patient validation" badge="Optional" />
-        <EmbryoTransferSection sessionId={sessionId} caseData={caseData} showUpload={showUpload} />
+        <SectionHeader num="3" title="Embryo Transfer" subtitle="Upload tube images for patient validation" badge="Optional" />
+        <EmbryoTransferSection sessionId={sessionId} caseData={caseData} showUpload={showUpload} stageKey={stageKey} />
       </div>
 
       {/* Sub 3: Cryopreservation */}
       <div style={card}>
-        <SectionHeader num="3" title="Cryopreservation" subtitle="Record embryo storage location in nitrogen can system" />
+        <SectionHeader num="4" title="Cryopreservation" subtitle="Record embryo storage location in nitrogen can system" />
         <CryopreservationSection sessionId={sessionId} stageKey={stageKey} />
       </div>
 
       {/* Remark */}
       <div style={card}>
-        <SectionHeader num="4" title="Remark" subtitle="Add observations or notes" />
+        <SectionHeader num="5" title="Remark" subtitle="Add observations or notes" />
         <textarea style={{ width: '100%', padding: '0.65rem 0.85rem', border: '1.5px solid #e2e8f0', borderRadius: '8px', fontSize: '0.88rem', outline: 'none', boxSizing: 'border-box', resize: 'vertical', minHeight: '75px', fontFamily: 'inherit' }}
           placeholder="Enter your observations..." value={remark} onChange={(e) => { setRemark(e.target.value); setRemarkSaved(false); }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.5rem' }}>

@@ -1,5 +1,9 @@
 import json, boto3, os
 from datetime import datetime
+try:
+    from audit_helper import log_audit
+except:
+    log_audit = None
 dynamodb = boto3.resource("dynamodb")
 cases_table = dynamodb.Table(os.environ.get("CASES_TABLE", "IVF-Cases"))
 CORS = {"Content-Type":"application/json","Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"Content-Type","Access-Control-Allow-Methods":"GET,POST,OPTIONS"}

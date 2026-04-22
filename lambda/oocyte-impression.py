@@ -7,6 +7,9 @@ import json
 import boto3
 import os
 from datetime import datetime
+try:
+    from audit_helper import log_audit
+except: log_audit = None
 
 dynamodb = boto3.resource('dynamodb')
 cases_table = dynamodb.Table(os.environ.get('CASES_TABLE', 'IVF-Cases'))

@@ -354,6 +354,18 @@ export const api = {
     return response.json();
   },
 
+  // ===== VALIDATION OVERRIDE =====
+  overrideValidation: async (sessionId, stage, overrideData) => {
+    const userInfo = await getUserInfo();
+    const response = await fetch(`${API_BASE_URL}/case/${sessionId}/override-validation`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stage, ...overrideData, ...userInfo })
+    });
+    if (!response.ok) throw new Error('Failed to override validation');
+    return response.json();
+  },
+
   // ===== FERTILIZATION CHECK (DAY 1) =====
   saveFertilizationData: async (sessionId, data) => {
     const response = await fetch(`${API_BASE_URL}/case/${sessionId}/fertilization-check`, {

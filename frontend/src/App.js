@@ -16,6 +16,7 @@ import ICSIStage from './components/ICSIStage';
 import FertilizationCheck from './components/FertilizationCheck';
 import CleavageStage from './components/CleavageStage';
 import BlastocystStage from './components/BlastocystStage';
+import FETStage from './components/FETStage';
 import CaseStatus from './components/CaseStatus';
 import SessionList from './components/SessionList';
 import Metrics from './components/Metrics';
@@ -393,6 +394,13 @@ function App() {
               />
             ) : STAGES[currentStageIndex].id === 'icsi' ? (
               <ICSIStage
+                sessionId={sessionId}
+                caseData={caseData}
+                onComplete={handleStageComplete}
+                onViewStatus={handleViewStatus}
+              />
+            ) : STAGES[currentStageIndex].id === 'culture' ? (
+              <FETStage
                 sessionId={sessionId}
                 caseData={caseData}
                 onComplete={handleStageComplete}

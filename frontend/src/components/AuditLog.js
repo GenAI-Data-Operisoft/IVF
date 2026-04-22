@@ -89,6 +89,19 @@ const getSummaryIcon = (action) => {
   return <IcoTag />;
 };
 
+const STAGE_DISPLAY_NAMES = {
+  'label_validation': 'Patient Verification',
+  'oocyte_collection': 'Oocyte Collection',
+  'denudation': 'Oocyte Impression',
+  'male_sample_collection': 'Sperm Preparation',
+  'icsi': 'ICSI/IVF',
+  'fertilization_check': 'Fertilization Check',
+  'icsi_documentation': 'Cleavage (Day 3)',
+  'blastocyst': 'Blastocyst (Day 5/6)',
+  'culture': 'FET',
+};
+const formatStageName = (stage) => STAGE_DISPLAY_NAMES[stage] || stage.replace(/_/g, ' ');
+
 function AuditLog({ onBack }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -166,14 +179,21 @@ function AuditLog({ onBack }) {
 
   const getActionBadgeColor = (action) => {
     const colors = {
-      'REGISTER_CASE':   '#2196f3',
-      'UPLOAD_IMAGE':    '#4caf50',
-      'EDIT_PATIENT':    '#ff9800',
-      'VALIDATION_PASS': '#4caf50',
-      'VALIDATION_FAIL': '#f44336',
-      'RESOLVE_FAILURE': '#9c27b0',
-      'LOGIN':           '#00bcd4',
-      'LOGOUT':          '#607d8b'
+      'REGISTER_CASE':    '#2196f3',
+      'UPLOAD_IMAGE':     '#4caf50',
+      'EDIT_PATIENT':     '#ff9800',
+      'VALIDATION_PASS':  '#4caf50',
+      'VALIDATION_FAIL':  '#f44336',
+      'MANUAL_OVERRIDE':  '#f59e0b',
+      'COMPLETE_STAGE':   '#22c55e',
+      'OCR_EXTRACT':      '#667eea',
+      'IMAGE_ANNOTATED':  '#764ba2',
+      'RESOLVE_FAILURE':  '#9c27b0',
+      'STOP_WAITING':     '#94a3b8',
+      'SAVE_REMARK':      '#06b6d4',
+      'SAVE_MANUAL_GRADE':'#059669',
+      'LOGIN':            '#00bcd4',
+      'LOGOUT':           '#607d8b'
     };
     return colors[action] || '#757575';
   };
@@ -276,19 +296,29 @@ function AuditLog({ onBack }) {
               <option value="EDIT_PATIENT">Edit Patient</option>
               <option value="VALIDATION_PASS">Validation Pass</option>
               <option value="VALIDATION_FAIL">Validation Fail</option>
+              <option value="MANUAL_OVERRIDE">Manual Override</option>
+              <option value="COMPLETE_STAGE">Complete Stage</option>
+              <option value="OCR_EXTRACT">OCR Extract</option>
+              <option value="IMAGE_ANNOTATED">Image Annotated</option>
               <option value="RESOLVE_FAILURE">Resolve Failure</option>
+              <option value="STOP_WAITING">Stop Waiting</option>
+              <option value="SAVE_REMARK">Save Remark</option>
+              <option value="SAVE_MANUAL_GRADE">Save Manual Grade</option>
             </select>
           </div>
           <div className="filter-group">
             <label>Stage</label>
             <select value={filters.stage} onChange={(e) => handleFilterChange('stage', e.target.value)}>
               <option value="">All Stages</option>
-              <option value="label_validation">Label Validation</option>
+              <option value="label_validation">Patient Verification</option>
               <option value="oocyte_collection">Oocyte Collection</option>
-              <option value="denudation">Denudation</option>
-              <option value="male_sample_collection">Male Sample Collection</option>
-              <option value="icsi">ICSI</option>
-              <option value="culture">Culture</option>
+              <option value="denudation">Oocyte Impression</option>
+              <option value="male_sample_collection">Sperm Preparation</option>
+              <option value="icsi">ICSI/IVF</option>
+              <option value="fertilization_check">Fertilization Check (Day 1)</option>
+              <option value="icsi_documentation">Cleavage (Day 3)</option>
+              <option value="blastocyst">Blastocyst (Day 5/6)</option>
+              <option value="culture">Frozen Embryo Transfer (FET)</option>
             </select>
           </div>
           <div className="filter-group">
@@ -351,7 +381,7 @@ function AuditLog({ onBack }) {
                       </span>
                     </td>
                     <td className="stage-cell">
-                      {log.stage ? <code>{log.stage.replace(/_/g, ' ')}</code> : <span style={{ color: '#999' }}>-</span>}
+                      {log.stage ? <code>{formatStageName(log.stage)}</code> : <span style={{ color: '#999' }}>-</span>}
                     </td>
                     <td>
                       {log.center ? (
@@ -383,6 +413,14 @@ function AuditLog({ onBack }) {
                             <path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/>
                           </svg>
                           <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#f44336', letterSpacing: '0.5px' }}>FAILURE</span>
+                        </div>
+                      ) : log.action === 'MANUAL_OVERRIDE' ? (
+                        <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                          </svg>
+                          <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#f59e0b', letterSpacing: '0.5px' }}>OVERRIDE</span>
                         </div>
                       ) : (
                         <span style={{ color: '#ccc', fontSize: '1rem' }}>—</span>

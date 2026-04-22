@@ -14,24 +14,18 @@ import json
 import boto3
 import os
 from datetime import datetime
+from audit_helper import log_audit, extract_user_info
 
 dynamodb = boto3.resource('dynamodb')
 cases_table = dynamodb.Table(os.environ.get('CASES_TABLE', 'IVF-Cases'))
 
 
 def lambda_handler(event, context):
-    """
-    Reads sessionId and stage from the request body, then updates the
-    stage status to 'completed' and records when it was completed.
-    """
     try:
         body = json.loads(event['body'])
         session_id = body['sessionId']
         stage = body['stage']
 
-        # Update the stage status to completed and record the timestamp.
-        # ExpressionAttributeNames is required because 'status' is a reserved
-        # word in DynamoDB expression syntax.
         cases_table.update_item(
             Key={'sessionId': session_id},
             UpdateExpression='SET stages.#stage.#status = :status, stages.#stage.#completed_at = :completed_at',
@@ -44,6 +38,20 @@ def lambda_handler(event, context):
                 ':status': 'completed',
                 ':completed_at': datetime.utcnow().isoformat()
             }
+        )
+
+        # Audit log
+        user_info, ip_address = extract_user_info(event)
+        log_audit(
+            user_info=user_info,
+            action='COMPLETE_STAGE',
+            resource_type='stage',
+            resource_id=session_id,
+            session_id=session_id,
+            stage=stage,
+            result='success',
+            ip_address=ip_address,
+            metadata={'message': f'Stage {stage} marked as completed'}
         )
 
         return {

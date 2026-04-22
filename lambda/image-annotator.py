@@ -4,6 +4,10 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 from datetime import datetime
+try:
+    from audit_helper import log_audit
+except:
+    log_audit = None
 import uuid
 
 s3_client = boto3.client('s3')
@@ -57,6 +61,11 @@ def lambda_handler(event, context):
             'fertilization-check': 'fertilization_check',
             'cleavage': 'cleavage',
             'blastocyst': 'blastocyst',
+            'cleavage-transfer': 'cleavage_transfer',
+            'blastocyst-transfer': 'blastocyst_transfer',
+            'cleavage-sample': 'cleavage_sample',
+            'blastocyst-sample': 'blastocyst_sample',
+            'fet': 'fet',
         }
         stage_type = stage_type_map.get(folder_prefix, folder_prefix)
         
@@ -137,6 +146,19 @@ def lambda_handler(event, context):
         
         images_table.put_item(Item=image_record)
         print(f"Stored metadata: {image_record['imageId']}")
+        
+        # Audit log
+        if log_audit:
+            log_audit(
+                user_info={'userId': 'system', 'userEmail': 'system', 'userName': 'System', 'userRole': 'system'},
+                action='IMAGE_ANNOTATED',
+                resource_type='image',
+                resource_id=image_record['imageId'],
+                session_id=session_id,
+                stage=stage_type,
+                result='success',
+                metadata={'message': f'Microscopic image annotated with patient details', 'image_number': image_number, 'stage_type': stage_type}
+            )
         
         return {
             'statusCode': 200,

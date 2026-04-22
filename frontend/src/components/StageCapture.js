@@ -184,6 +184,10 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
   const [resolutionNotes, setResolutionNotes] = useState('');
   const [wasRetry, setWasRetry] = useState(false);
   const [stuckInProgress, setStuckInProgress] = useState(false);
+  const [showOverrideModal, setShowOverrideModal] = useState(false);
+  const [overrideFields, setOverrideFields] = useState({});
+  const [overrideJustification, setOverrideJustification] = useState('');
+  const [submittingOverride, setSubmittingOverride] = useState(false);
 
   // Check if this is the last stage
   const isLastStage = stage.id === STAGES[STAGES.length - 1].id;
@@ -522,6 +526,42 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
     poll();
   };
 
+  const handleOpenOverride = () => {
+    // Pre-fill override fields with the mismatched values
+    const fields = {};
+    if (validationResult && validationResult.mismatches) {
+      validationResult.mismatches.forEach(m => {
+        fields[m.field] = { expected: m.expected, found: m.found || '', corrected: m.expected };
+      });
+    }
+    setOverrideFields(fields);
+    setOverrideJustification('');
+    setShowOverrideModal(true);
+  };
+
+  const handleSubmitOverride = async () => {
+    if (!overrideJustification.trim()) {
+      alert('Please provide a justification for the manual override.');
+      return;
+    }
+    setSubmittingOverride(true);
+    try {
+      await api.overrideValidation(sessionId, stage.id, {
+        corrected_fields: overrideFields,
+        justification: overrideJustification,
+        original_mismatches: validationResult.mismatches,
+      });
+      // Update local state to show as successful
+      setValidationResult({ ...validationResult, overall_match: true, manually_overridden: true });
+      setShowOverrideModal(false);
+      setShowPreviousResult(false);
+    } catch (err) {
+      alert('Failed to submit override. Please try again.');
+    } finally {
+      setSubmittingOverride(false);
+    }
+  };
+
   const renderValidationResult = () => {
     if (!validationResult) return null;
 
@@ -546,7 +586,7 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
         </h3>
         
         {isMatch ? (
-          <p>All patient data matches the registered information.</p>
+          <p>{validationResult.manually_overridden ? 'Validation manually overridden and marked as successful.' : 'All patient data matches the registered information.'}</p>
         ) : (
           <div>
             <p>The following mismatches were detected:</p>
@@ -565,7 +605,24 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
           {!isMatch && (
             <p className="retry-hint">💡 Tip: Upload clearer images with better lighting and angle for accurate validation</p>
           )}
+          {!isMatch && (
+            <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0.5rem 0 1rem' }}>
+              Or if you're confident the sample is correct and OCR made a mistake, you can override manually:
+            </p>
+          )}
           <div className="action-buttons">
+            {!isMatch && (
+              <button onClick={handleOpenOverride} style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: 'white',
+                border: 'none', borderRadius: '6px', padding: '0.6rem 1.2rem',
+                fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer',
+                boxShadow: '0 2px 4px rgba(245,158,11,0.3)'
+              }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                Override Manually
+              </button>
+            )}
             <button onClick={handleValidateAgain} className="btn-warning" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
               <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
               Upload New Images
@@ -741,6 +798,72 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
       )}
 
       {renderValidationResult()}
+
+      {/* Manual Override Modal */}
+      {showOverrideModal && (
+        <div className="modal-overlay" onClick={() => setShowOverrideModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '550px' }}>
+            <h2 style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginBottom: '0.5rem' }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Manual Override
+            </h2>
+            <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.25rem' }}>
+              Correct the mismatched fields below and provide a justification. This will mark the validation as successful.
+            </p>
+
+            {Object.entries(overrideFields).map(([field, data]) => (
+              <div key={field} style={{ marginBottom: '1rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '0.85rem 1rem' }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#92400e', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  {field.replace('_', ' ')}
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.82rem' }}>
+                  <div>
+                    <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Expected (registered)</span>
+                    <div style={{ fontWeight: 600, color: '#16a34a' }}>{data.expected}</div>
+                  </div>
+                  <div>
+                    <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Found by OCR</span>
+                    <div style={{ fontWeight: 600, color: '#dc2626' }}>{data.found || 'null'}</div>
+                  </div>
+                </div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>Corrected Value</label>
+                <input
+                  type="text"
+                  value={data.corrected}
+                  onChange={(e) => setOverrideFields(prev => ({ ...prev, [field]: { ...prev[field], corrected: e.target.value } }))}
+                  style={{ width: '100%', padding: '0.5rem 0.65rem', border: '1.5px solid #e2e8f0', borderRadius: '7px', fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+            ))}
+
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#374151', marginBottom: '0.35rem' }}>
+                Justification <span style={{ color: '#e11d48' }}>*</span>
+              </label>
+              <textarea
+                value={overrideJustification}
+                onChange={(e) => setOverrideJustification(e.target.value)}
+                placeholder="Explain why you're overriding the OCR result (e.g., 'OCR misread handwritten digit, label is correct upon visual inspection')"
+                style={{ width: '100%', padding: '0.6rem 0.75rem', border: '1.5px solid #e2e8f0', borderRadius: '7px', fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box', resize: 'vertical', minHeight: '70px', fontFamily: 'inherit' }}
+              />
+            </div>
+
+            <div className="modal-actions" style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowOverrideModal(false)} className="btn-secondary" style={{ padding: '0.55rem 1.1rem' }}>
+                Cancel
+              </button>
+              <button onClick={handleSubmitOverride} disabled={submittingOverride} style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: 'white',
+                border: 'none', borderRadius: '6px', padding: '0.55rem 1.25rem',
+                fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer',
+              }}>
+                {submittingOverride ? 'Submitting...' : '✓ Confirm Override'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Resolution Modal */}
       {showResolutionModal && (

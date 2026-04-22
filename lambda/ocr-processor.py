@@ -3,6 +3,10 @@ import boto3
 import base64
 import uuid
 from datetime import datetime
+try:
+    from audit_helper import log_audit
+except:
+    log_audit = None
 import os
 
 s3_client = boto3.client('s3')
@@ -697,4 +701,22 @@ def store_extraction_result(stage_folder, session_id, s3_key, extracted_data):
     
     table.put_item(Item=extraction_record)
     print(f"Stored extraction result: {extraction_record['extractionId']} (Tokens: {extraction_record['input_tokens']} in, {extraction_record['output_tokens']} out)")
+    
+    # Audit log
+    if log_audit:
+        log_audit(
+            user_info={'userId': 'system', 'userEmail': 'system', 'userName': 'AI OCR', 'userRole': 'system'},
+            action='OCR_EXTRACT',
+            resource_type='extraction',
+            resource_id=extraction_record['extractionId'],
+            session_id=session_id,
+            stage=stage_folder.replace('-', '_'),
+            result='success',
+            metadata={
+                'message': f'OCR extraction completed for {stage_folder}',
+                'model': extracted_data.get('model_used', 'unknown'),
+                'input_tokens': int(extracted_data.get('input_tokens', 0)),
+                'output_tokens': int(extracted_data.get('output_tokens', 0)),
+            }
+        )
 

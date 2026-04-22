@@ -136,12 +136,15 @@ function Metrics({ onBack }) {
           <label>Stage:</label>
           <select value={filters.stage} onChange={(e) => setFilters({...filters, stage: e.target.value})}>
             <option value="all">All Stages</option>
-            <option value="label_validation">Label Validation</option>
+            <option value="label_validation">Patient Verification</option>
             <option value="oocyte_collection">Oocyte Collection</option>
-            <option value="denudation">Denudation</option>
-            <option value="male_sample_collection">Male Sample Collection</option>
-            <option value="icsi">ICSI</option>
-            <option value="culture">Culture</option>
+            <option value="denudation">Oocyte Impression</option>
+            <option value="male_sample_collection">Sperm Preparation</option>
+            <option value="icsi">ICSI/IVF</option>
+            <option value="fertilization_check">Fertilization Check (Day 1)</option>
+            <option value="icsi_documentation">Cleavage (Day 3)</option>
+            <option value="blastocyst">Blastocyst (Day 5/6)</option>
+            <option value="culture">Frozen Embryo Transfer (FET)</option>
           </select>
         </div>
         <div className="filter-group">
@@ -323,9 +326,18 @@ function getColor(index) {
 }
 
 function formatStage(stage) {
-  return stage.split('_').map(word => 
-    word.charAt(0).toUpperCase() + word.slice(1)
-  ).join(' ');
+  const names = {
+    'label_validation': 'Patient Verification',
+    'oocyte_collection': 'Oocyte Collection',
+    'denudation': 'Oocyte Impression',
+    'male_sample_collection': 'Sperm Preparation',
+    'icsi': 'ICSI/IVF',
+    'fertilization_check': 'Fertilization Check',
+    'icsi_documentation': 'Cleavage (Day 3)',
+    'blastocyst': 'Blastocyst (Day 5/6)',
+    'culture': 'FET',
+  };
+  return names[stage] || stage.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
 export default Metrics;
