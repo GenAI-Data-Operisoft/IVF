@@ -58,6 +58,14 @@ function ICSIStage({ sessionId, caseData, onComplete, onViewStatus }) {
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState(null);
 
+  // Video upload state
+  const [videoFile, setVideoFile] = useState(null);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState(null);
+  const [videoUploading, setVideoUploading] = useState(false);
+  const [videoUploaded, setVideoUploaded] = useState(false);
+  const [videoS3Key, setVideoS3Key] = useState(null);
+  const [existingVideoUrl, setExistingVideoUrl] = useState(null);
+
   useEffect(() => {
     loadExistingData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,6 +77,15 @@ function ICSIStage({ sessionId, caseData, onComplete, onViewStatus }) {
       if (data.procedure_type) setProcedureType(data.procedure_type);
       setRemark(data.remark || '');
       setExistingRemark(data.remark || '');
+      // Load existing video
+      if (data.video_s3_key) {
+        setVideoS3Key(data.video_s3_key);
+        setVideoUploaded(true);
+        try {
+          const { downloadUrl } = await api.getImageDownloadUrl(data.video_s3_key);
+          setExistingVideoUrl(downloadUrl);
+        } catch {}
+      }
       const imgData = await api.getAnnotatedImages(sessionId, 'icsi_documentation');
       setAnnotatedImages(imgData.images || []);
     } catch { /* no data yet */ }
@@ -147,6 +164,42 @@ function ICSIStage({ sessionId, caseData, onComplete, onViewStatus }) {
       } catch (err) { setError(err.message); setProcessing(false); }
     };
     poll();
+  };
+
+  const handleVideoSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setVideoFile(file);
+    setVideoPreviewUrl(URL.createObjectURL(file));
+    setVideoUploaded(false);
+  };
+
+  const handleVideoUpload = async () => {
+    if (!videoFile) return;
+    setVideoUploading(true);
+    setError(null);
+    try {
+      // Get presigned URL for video upload
+      const { uploadUrl, s3Key } = await api.getPresignedUrlForAnnotatedImage(sessionId, 999, 'icsi-video');
+      // Upload video directly — no compression on frontend (S3 handles large files)
+      const response = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': videoFile.type || 'video/mp4',
+          'x-amz-server-side-encryption': 'AES256'
+        },
+        body: videoFile,
+      });
+      if (!response.ok) throw new Error('Video upload failed');
+      setVideoS3Key(s3Key);
+      setVideoUploaded(true);
+      // Save video reference in stage data
+      await api.saveICSIStageData(sessionId, { procedure_type: procedureType, remark, video_s3_key: s3Key });
+    } catch (err) {
+      setError('Video upload failed: ' + err.message);
+    } finally {
+      setVideoUploading(false);
+    }
   };
 
   const handleSaveRemark = async () => {
@@ -249,9 +302,15 @@ function ICSIStage({ sessionId, caseData, onComplete, onViewStatus }) {
         )}
       </div>
 
-      {/* ── SECTION 2: Label Validation ── */}
+      {/* ── SECTION 2: Label Validation — name changes based on procedure type ── */}
       <div style={sectionStyle(!!procedureType)}>
-        {sectionHeader('2', 'Label Validation', 'Upload label image for AI validation')}
+        {sectionHeader('2',
+          procedureType === 'ICSI' ? 'ICSI Validation' :
+          procedureType === 'IVF' ? 'IVF Validation' :
+          procedureType === 'ICSI_IVF' ? 'ICSI & IVF Validation' :
+          'Label Validation',
+          'Upload label image for AI validation'
+        )}
         {!procedureType ? (
           <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Select a procedure type above first.</p>
         ) : (
@@ -343,6 +402,87 @@ function ICSIStage({ sessionId, caseData, onComplete, onViewStatus }) {
                 </div>
               </div>
             )}
+
+            {/* Video Upload */}
+            <div style={{ marginBottom: '1.25rem', padding: '1rem', background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '10px' }}>
+              <p style={{ fontWeight: 600, fontSize: '0.88rem', color: '#374151', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                🎥 Procedure Video
+              </p>
+              <p style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: '0.75rem' }}>
+                Upload procedure video (10-15 min). Patient details will be stored with the video for reference.
+              </p>
+
+              {!videoFile && !existingVideoUrl && (
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <label style={{ cursor: 'pointer' }}>
+                    <input type="file" accept="video/*" style={{ display: 'none' }} onChange={handleVideoSelect} />
+                    <span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.55rem 1.1rem', fontSize: '0.88rem' }}>
+                      <IconUpload /> Select Video
+                    </span>
+                  </label>
+                  <label style={{ cursor: 'pointer' }}>
+                    <input type="file" accept="video/*" capture="environment" style={{ display: 'none' }} onChange={handleVideoSelect} />
+                    <span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.55rem 1.1rem', fontSize: '0.88rem' }}>
+                      <IconCamera /> Record Video
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {videoFile && !videoUploaded && (
+                <div>
+                  <video src={videoPreviewUrl} controls style={{ width: '100%', maxHeight: '250px', borderRadius: '8px', marginBottom: '0.75rem', background: '#000' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <p style={{ fontSize: '0.78rem', color: '#64748b', margin: 0 }}>
+                      {videoFile.name} ({(videoFile.size / (1024 * 1024)).toFixed(1)} MB)
+                    </p>
+                    <button type="button" onClick={handleVideoUpload} disabled={videoUploading} className="btn-primary"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
+                      {videoUploading ? 'Uploading...' : '⬆ Upload Video'}
+                    </button>
+                    <button type="button" onClick={() => { setVideoFile(null); setVideoPreviewUrl(null); }} className="btn-secondary"
+                      style={{ fontSize: '0.85rem' }}>
+                      Cancel
+                    </button>
+                  </div>
+                  {videoUploading && (
+                    <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <img src="https://d1nmtja0c4ok3x.cloudfront.net/IVFgif.gif" alt="" style={{ width: '24px', height: '24px' }} />
+                      <span style={{ fontSize: '0.82rem', color: '#667eea', fontWeight: 600 }}>Uploading video... This may take a few minutes for large files.</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {videoUploaded && (
+                <div>
+                  <div style={{ position: 'relative', marginBottom: '0.5rem' }}>
+                    <video src={videoPreviewUrl || existingVideoUrl} controls style={{ width: '100%', maxHeight: '280px', borderRadius: '8px', background: '#000' }} />
+                    {/* Patient details overlay */}
+                    <div style={{ position: 'absolute', bottom: '40px', right: '8px', background: 'rgba(0,0,0,0.75)', color: 'white', padding: '6px 10px', borderRadius: '6px', fontSize: '0.72rem', lineHeight: 1.4, pointerEvents: 'none' }}>
+                      <div>Male: {caseData.male_patient.name} ({caseData.male_patient.mpeid})</div>
+                      <div>Female: {caseData.female_patient.name} ({caseData.female_patient.mpeid})</div>
+                      <div>Procedure: {PROCEDURE_OPTIONS.find(o => o.value === procedureType)?.label || procedureType}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.82rem', color: '#16a34a', fontWeight: 600 }}>✓ Video uploaded</span>
+                    <button type="button" onClick={async () => {
+                      try {
+                        const key = videoS3Key.startsWith('s3://') ? videoS3Key.split('/').slice(3).join('/') : videoS3Key;
+                        const { downloadUrl } = await api.getImageDownloadUrl(key);
+                        window.open(downloadUrl, '_blank');
+                      } catch { setError('Failed to get download URL'); }
+                    }} className="btn-secondary" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}>
+                      ↓ Download Video
+                    </button>
+                    <button type="button" onClick={() => { setVideoFile(null); setVideoPreviewUrl(null); setVideoUploaded(false); setExistingVideoUrl(null); }} className="btn-secondary" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}>
+                      Replace Video
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Remark */}
             <div style={{ marginBottom: '1.25rem' }}>

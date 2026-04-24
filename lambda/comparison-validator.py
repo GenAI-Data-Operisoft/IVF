@@ -18,6 +18,8 @@ STAGE_VALIDATION_RULES = {
     'icsi': ['female_name', 'female_mpeid'],
     'culture': ['female_name', 'female_mpeid'],
     'fertilization_check': ['female_name', 'female_mpeid'],
+    'icsi_documentation': ['female_name', 'female_mpeid'],
+    'blastocyst': ['female_name', 'female_mpeid'],
 }
 
 def lambda_handler(event, context):
@@ -51,6 +53,10 @@ def lambda_handler(event, context):
                     s3_path = new_image['s3_path']['S']
                     if 'fertilization-check/' in s3_path:
                         stage = 'fertilization_check'
+                    elif 'icsi-documentation/' in s3_path:
+                        stage = 'icsi_documentation'
+                    elif 'blastocyst-stage/' in s3_path:
+                        stage = 'blastocyst'
                 
                 # Get extracted data
                 extracted_data = parse_dynamodb_map(new_image['extracted_data']['M'])
@@ -179,11 +185,33 @@ def validate_extraction(extracted, case, stage):
     
     fields_to_check = STAGE_VALIDATION_RULES.get(stage, [])
     
+    # Check if donor is involved — adjust validation targets
+    male_type = case.get('male_patient', {}).get('type', 'self')
+    female_type = case.get('female_patient', {}).get('type', 'self')
+    
     for field in fields_to_check:
         patient_type, field_name = field.split('_', 1)
         
         extracted_value = extracted.get(field)
-        registered_value = case[f'{patient_type}_patient'].get(field_name)
+        
+        # Determine registered value based on donor status
+        if patient_type == 'male' and male_type == 'donor':
+            # Male donor: petri dish has donor_id, validate against that
+            if field_name == 'mpeid':
+                registered_value = case['male_patient'].get('donor_id', '')
+            else:
+                # Skip name validation for male donor (no name on petri dish)
+                continue
+        elif patient_type == 'female' and female_type == 'donor':
+            # Female donor: petri dish has donor_name + donor_mpeid
+            if field_name == 'name':
+                registered_value = case['female_patient'].get('donor_name', '')
+            elif field_name == 'mpeid':
+                registered_value = case['female_patient'].get('donor_mpeid', '')
+            else:
+                registered_value = case[f'{patient_type}_patient'].get(field_name)
+        else:
+            registered_value = case[f'{patient_type}_patient'].get(field_name)
         
         # Normalize for comparison
         if extracted_value:

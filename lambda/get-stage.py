@@ -13,6 +13,8 @@ STAGE_TABLE_MAP = {
     'culture':                os.environ.get('CULTURE_TABLE', 'IVF-CultureExtractions'),
     # New stages — reuse label validation table for female-patient validation stages
     'fertilization_check':    os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
+    'icsi_documentation':     os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
+    'blastocyst':             os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
 }
 
 def lambda_handler(event, context):

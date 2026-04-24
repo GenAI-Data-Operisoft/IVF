@@ -6,7 +6,7 @@ import { api } from '../api';
 import { STAGES } from '../config';
 import usePermissionStore from '../store/permissionStore';
 
-function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage, onStartOocyteImpression, userRole, onBack }) {
+function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage, onStartOocyteMorphology, userRole, onBack }) {
   const { canEdit } = usePermissionStore();
   const isViewer = !canEdit('ivfCapture');
   const [caseData, setCaseData] = useState(initialData);
@@ -290,7 +290,7 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
                       ) : (
                         <>
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                          {stage.id === 'denudation' ? 'Start Oocyte Impression' : 'Start Validation'}
+                          {stage.id === 'denudation' ? 'Start Oocyte Morphology' : 'Start Validation'}
                         </>
                       )}
                     </button>
@@ -311,7 +311,7 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
                       }}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
-                      {stage.id === 'denudation' ? 'Open Oocyte Impression' : 'Retry Validation'}
+                      {stage.id === 'denudation' ? 'Open Oocyte Morphology' : 'Retry Validation'}
                     </button>
                   </div>
                 )}

@@ -11,7 +11,7 @@ import Home from './components/Home';
 import RegistrationForm from './components/RegistrationForm';
 import StageCapture from './components/StageCapture';
 import ICSIDocumentation from './components/ICSIDocumentation';
-import OocyteImpression from './components/OocyteImpression';
+import OocyteMorphology from './components/OocyteImpression';
 import ICSIStage from './components/ICSIStage';
 import FertilizationCheck from './components/FertilizationCheck';
 import CleavageStage from './components/CleavageStage';
@@ -156,10 +156,10 @@ function App() {
     }
   };
 
-  const handleStartOocyteImpression = async () => {
+  const handleStartOocyteMorphology = async () => {
     const data = await api.getCase(sessionId);
     setCaseData(data);
-    setCurrentView('oocyte-impression');
+    setCurrentView('oocyte-morphology');
   };
 
   const handleViewSessions = () => {
@@ -386,7 +386,7 @@ function App() {
                 onViewStatus={handleViewStatus}
               />
             ) : STAGES[currentStageIndex].id === 'denudation' ? (
-              <OocyteImpression
+              <OocyteMorphology
                 sessionId={sessionId}
                 caseData={caseData}
                 onComplete={handleStageComplete}
@@ -418,8 +418,8 @@ function App() {
           </>
         )}
 
-        {currentView === 'oocyte-impression' && sessionId && (
-          <OocyteImpression
+        {currentView === 'oocyte-morphology' && sessionId && (
+          <OocyteMorphology
             sessionId={sessionId}
             caseData={caseData}
             onComplete={handleViewStatus}
@@ -440,7 +440,7 @@ function App() {
               setCurrentView('registration');
             }}
             onStartStage={handleStartStage}
-            onStartOocyteImpression={handleStartOocyteImpression}
+            onStartOocyteMorphology={handleStartOocyteMorphology}
           />
         )}
 

@@ -248,7 +248,7 @@ export const api = {
     return response.text();
   },
 
-  // Scans a patient label or wristband image using Bedrock OCR and returns
+  // Scans a patient label image using Bedrock OCR and returns
   // extracted fields (name, last_name, mpeid, dob) to auto-fill the registration form.
   scanPatientLabel: async (imageFile, patientType, modelId) => {
     const base64 = await new Promise((resolve, reject) => {
@@ -430,9 +430,9 @@ export const api = {
     return response.json();
   },
 
-  // ===== OOCYTE IMPRESSION =====
-  // Get presigned URL for oocyte impression microscopic image upload
-  getPresignedUrlForOocyteImpression: async (sessionId, imageNumber) => {
+  // ===== OOCYTE MORPHOLOGY =====
+  // Get presigned URL for oocyte morphology microscopic image upload
+  getPresignedUrlForOocyteMorphology: async (sessionId, imageNumber) => {
     const response = await fetch(`${API_BASE_URL}/presigned-url`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -442,8 +442,8 @@ export const api = {
     return response.json();
   },
 
-  // Save oocyte impression remark
-  saveOocyteImpressionRemark: async (sessionId, remark) => {
+  // Save oocyte morphology remark
+  saveOocyteMorphologyRemark: async (sessionId, remark) => {
     const response = await fetch(`${API_BASE_URL}/case/${sessionId}/oocyte-impression`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -453,10 +453,10 @@ export const api = {
     return response.json();
   },
 
-  // Get oocyte impression data (images + remark)
-  getOocyteImpression: async (sessionId) => {
+  // Get oocyte morphology data (images + remark)
+  getOocyteMorphology: async (sessionId) => {
     const response = await fetch(`${API_BASE_URL}/case/${sessionId}/oocyte-impression`);
-    if (!response.ok) throw new Error('Failed to fetch oocyte impression data');
+    if (!response.ok) throw new Error('Failed to fetch oocyte morphology data');
     return response.json();
   },
 
