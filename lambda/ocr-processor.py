@@ -21,6 +21,8 @@ STAGE_TABLE_MAP = {
     'icsi': os.environ.get('ICSI_TABLE', 'IVF-ICSIExtractions'),
     'culture': os.environ.get('CULTURE_TABLE', 'IVF-CultureExtractions'),
     'fertilization-check': os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
+    'icsi-documentation': os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
+    'blastocyst-stage': os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
 }
 
 def extract_with_converse_api(image_bytes, stage, model_id, model_name, image_number=1):
@@ -44,7 +46,7 @@ def extract_with_converse_api(image_bytes, stage, model_id, model_name, image_nu
     Put the data in male_name and male_mpeid fields.
     Leave female_name and female_mpeid as null.
     """
-    elif stage == 'fertilization-check':
+    elif stage in ('fertilization-check', 'icsi-documentation', 'blastocyst-stage'):
         data_instruction = """
     This is a FERTILIZATION CHECK stage - extract the FEMALE patient's information from this label.
     Put the data in female_name and female_mpeid fields.
@@ -295,7 +297,7 @@ def extract_text_with_bedrock(image_bytes, stage, model_config, image_number=1):
     Put the data in male_name and male_mpeid fields.
     Leave female_name and female_mpeid as null.
     """
-    elif stage == 'fertilization-check':
+    elif stage in ('fertilization-check', 'icsi-documentation', 'blastocyst-stage'):
         data_instruction = """
     This is a FERTILIZATION CHECK stage - extract the FEMALE patient's information from this label.
     Put the data in female_name and female_mpeid fields.

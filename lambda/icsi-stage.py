@@ -32,6 +32,7 @@ def lambda_handler(event, context):
             return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({
                 'procedure_type': data.get('procedure_type', ''),
                 'remark': data.get('remark', ''),
+                'video_s3_key': data.get('video_s3_key', ''),
             })}
         elif method == 'POST':
             body = json.loads(event.get('body') or '{}')
@@ -42,6 +43,7 @@ def lambda_handler(event, context):
                     ':d': {
                         'procedure_type': body.get('procedure_type', ''),
                         'remark': body.get('remark', ''),
+                        'video_s3_key': body.get('video_s3_key', ''),
                         'updated_at': datetime.utcnow().isoformat()
                     }
                 }

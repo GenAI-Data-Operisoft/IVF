@@ -92,7 +92,7 @@ const getSummaryIcon = (action) => {
 const STAGE_DISPLAY_NAMES = {
   'label_validation': 'Patient Verification',
   'oocyte_collection': 'Oocyte Collection',
-  'denudation': 'Oocyte Impression',
+  'denudation': 'Oocyte Morphology',
   'male_sample_collection': 'Sperm Preparation',
   'icsi': 'ICSI/IVF',
   'fertilization_check': 'Fertilization Check',
@@ -312,7 +312,7 @@ function AuditLog({ onBack }) {
               <option value="">All Stages</option>
               <option value="label_validation">Patient Verification</option>
               <option value="oocyte_collection">Oocyte Collection</option>
-              <option value="denudation">Oocyte Impression</option>
+              <option value="denudation">Oocyte Morphology</option>
               <option value="male_sample_collection">Sperm Preparation</option>
               <option value="icsi">ICSI/IVF</option>
               <option value="fertilization_check">Fertilization Check (Day 1)</option>

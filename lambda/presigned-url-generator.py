@@ -18,7 +18,9 @@ STAGE_FOLDERS = {
     'male_sample_collection': 'male-sample-collection',
     'icsi': 'icsi',
     'fertilization_check': 'fertilization-check',
-    'culture': 'culture'
+    'culture': 'culture',
+    'icsi_documentation': 'icsi-documentation',
+    'blastocyst': 'blastocyst-stage',
 }
 
 def lambda_handler(event, context):

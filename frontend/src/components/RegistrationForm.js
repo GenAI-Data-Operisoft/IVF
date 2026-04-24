@@ -1,6 +1,6 @@
 /**
  * Registration Form — collects male and female patient details to start a new IVF case.
- * Flow: user types Name + MPID manually first, then scans wristband to verify.
+ * Flow: user types Name + MPID manually first, then scans to verify.
  */
 import React, { useState } from 'react';
 import { api } from '../api';
@@ -66,11 +66,20 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
   const [maleVerification, setMaleVerification] = useState(null);
   const [femaleVerification, setFemaleVerification] = useState(null);
 
+  // Donor state
+  const [maleType, setMaleType] = useState('self'); // 'self' | 'donor'
+  const [femaleType, setFemaleType] = useState('self'); // 'self' | 'donor'
+
   const [formData, setFormData] = useState({
     maleName: '',
     maleMpeid: '',
+    maleDonorId: '',
     femaleName: '',
     femaleMpeid: '',
+    femaleDonorName: '',
+    femaleDonorMpeid: '',
+    femaleDonorId: '',
+    femaleDonorRemark: '',
     procedureDate: new Date().toISOString().split('T')[0],
     doctorName: '',
     center: defaultCenter,
@@ -98,9 +107,31 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
     return normalizeName(typed) === normalizeName(scanned);
   };
 
+  // Compress image for scan — mobile cameras produce huge files that exceed API Gateway limits
+  const compressForScan = (file) => new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement('canvas');
+      const MAX = 1280; // enough for OCR, keeps base64 under 1MB
+      let { width, height } = img;
+      if (width > MAX || height > MAX) {
+        if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+        else { width = Math.round(width * MAX / height); height = MAX; }
+      }
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => resolve(new File([blob], 'scan.jpg', { type: 'image/jpeg' })), 'image/jpeg', 0.8);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+
   const handleScanLabel = async (e, patientType) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const rawFile = e.target.files[0];
+    if (!rawFile) return;
+    const file = await compressForScan(rawFile);
 
     const isMale = patientType === 'male';
     const setScanning = isMale ? setScanningMale : setScanningFemale;
@@ -162,8 +193,21 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
         }
       }
       const result = await api.registerCase({
-        male_patient:   { name: normalizeName(formData.maleName),   mpeid: normalizeMpeid(formData.maleMpeid) },
-        female_patient: { name: normalizeName(formData.femaleName), mpeid: normalizeMpeid(formData.femaleMpeid) },
+        male_patient:   {
+          name: normalizeName(formData.maleName),
+          mpeid: maleType === 'self' ? normalizeMpeid(formData.maleMpeid) : '',
+          type: maleType,
+          donor_id: maleType === 'donor' ? formData.maleDonorId.trim() : '',
+        },
+        female_patient: {
+          name: normalizeName(formData.femaleName),
+          mpeid: normalizeMpeid(formData.femaleMpeid),
+          type: femaleType,
+          donor_name: femaleType === 'donor' ? normalizeName(formData.femaleDonorName) : '',
+          donor_mpeid: femaleType === 'donor' ? normalizeMpeid(formData.femaleDonorMpeid) : '',
+          donor_id: femaleType === 'donor' ? formData.femaleDonorId.trim() : '',
+          donor_remark: femaleType === 'donor' ? formData.femaleDonorRemark.trim() : '',
+        },
         procedure_start_date: formData.procedureDate,
         doctor_name: formData.doctorName,
         center: caseCenter,
@@ -213,7 +257,7 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: isMatch ? 0 : '0.6rem', fontWeight: 600, fontSize: '0.85rem', color: isMatch ? '#16a34a' : '#b45309' }}>
           {isMatch ? <IconCheck /> : <IconWarning />}
-          {isMatch ? 'Wristband verified — details match' : 'Mismatch detected — please review'}
+          {isMatch ? 'Verified — details match' : 'Mismatch detected — please review'}
         </div>
         {!isMatch && (
           <div style={{ fontSize: '0.82rem', color: '#78350f' }}>
@@ -285,7 +329,7 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
         transition: 'all 0.2s',
       }}>
         <p style={{ margin: '0 0 0.5rem', fontSize: '0.82rem', color: canScan ? '#555' : '#94a3b8', fontWeight: 500 }}>
-          📷 Scan wristband to verify
+          📷 Scan to verify
           {!canScan && <span style={{ marginLeft: '6px', fontSize: '0.78rem', color: '#94a3b8' }}>(enter Name & MPID first)</span>}
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
@@ -343,7 +387,7 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
         </button>
         <div>
           <h2 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 700, color: '#1a202c', textAlign: 'left' }}>Register New IVF Case</h2>
-          <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Enter patient details, then scan wristband to verify</p>
+          <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Enter patient details, then scan to verify</p>
         </div>
       </div>
 
@@ -355,52 +399,80 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
 
       <form onSubmit={handleSubmit}>
 
-        {/* Two-column patient grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+        {/* Two-column patient grid — responsive for iPad/mobile */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
 
           {/* Male Patient */}
           <div style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: '14px', padding: '1.5rem', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '0.75rem' }}>
               <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.9rem', fontWeight: 700, flexShrink: 0 }}>M</div>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#1a202c' }}>Male Patient</h3>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#1a202c' }}>{maleType === 'donor' ? 'Male Donor Details' : 'Male Patient'}</h3>
             </div>
 
-            <div style={fieldStyle}>
-              <label style={labelStyle}>Full Name <span style={{ color: '#e11d48' }}>*</span></label>
-              <input style={inputStyle} type="text" placeholder="e.g. HIMANSHU SHARMA"
-                value={formData.maleName}
-                onChange={(e) => { setFormData({ ...formData, maleName: e.target.value }); setMaleVerification(null); }}
-                onBlur={() => setFormData(p => ({ ...p, maleName: normalizeName(p.maleName) }))}
-                required />
+            {/* Self / Donor radio */}
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, color: maleType === 'self' ? '#667eea' : '#64748b' }}>
+                <input type="radio" name="maleType" value="self" checked={maleType === 'self'} onChange={() => setMaleType('self')} style={{ accentColor: '#667eea' }} /> Self
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, color: maleType === 'donor' ? '#f59e0b' : '#64748b' }}>
+                <input type="radio" name="maleType" value="donor" checked={maleType === 'donor'} onChange={() => setMaleType('donor')} style={{ accentColor: '#f59e0b' }} /> Donor
+              </label>
             </div>
 
-            <div style={fieldStyle}>
-              <label style={labelStyle}>MPID <span style={{ color: '#e11d48' }}>*</span></label>
-              <input style={inputStyle} type="text" placeholder="e.g. ID-102192605"
-                value={formData.maleMpeid}
-                onChange={(e) => { setFormData({ ...formData, maleMpeid: e.target.value }); setMaleVerification(null); }}
-                onBlur={() => setFormData(p => ({ ...p, maleMpeid: normalizeMpeid(p.maleMpeid) }))}
-                required />
-              <small style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px', display: 'block' }}>Enter number only or with ID- prefix</small>
-            </div>
-
-            <ScanBox
-              patientType="male"
-              scanning={scanningMale}
-              preview={maleScanPreview}
-              verification={maleVerification}
-              typedName={formData.maleName}
-              typedMpeid={formData.maleMpeid}
-            />
+            {maleType === 'self' ? (
+              <>
+                <div style={fieldStyle}>
+                  <label style={labelStyle}>Full Name <span style={{ color: '#e11d48' }}>*</span></label>
+                  <input style={inputStyle} type="text" placeholder="e.g. HIMANSHU SHARMA"
+                    value={formData.maleName}
+                    onChange={(e) => { setFormData({ ...formData, maleName: e.target.value }); setMaleVerification(null); }}
+                    onBlur={() => setFormData(p => ({ ...p, maleName: normalizeName(p.maleName) }))}
+                    required />
+                </div>
+                <div style={fieldStyle}>
+                  <label style={labelStyle}>MPID <span style={{ color: '#e11d48' }}>*</span></label>
+                  <input style={inputStyle} type="text" placeholder="e.g. ID-102192605"
+                    value={formData.maleMpeid}
+                    onChange={(e) => { setFormData({ ...formData, maleMpeid: e.target.value }); setMaleVerification(null); }}
+                    onBlur={() => setFormData(p => ({ ...p, maleMpeid: normalizeMpeid(p.maleMpeid) }))}
+                    required />
+                  <small style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px', display: 'block' }}>Enter number only or with ID- prefix</small>
+                </div>
+                <ScanBox patientType="male" scanning={scanningMale} preview={maleScanPreview} verification={maleVerification} typedName={formData.maleName} typedMpeid={formData.maleMpeid} />
+              </>
+            ) : (
+              <>
+                <div style={fieldStyle}>
+                  <label style={labelStyle}>Donor ID <span style={{ color: '#e11d48' }}>*</span></label>
+                  <input style={inputStyle} type="text" placeholder="e.g. D-12345"
+                    value={formData.maleDonorId}
+                    onChange={(e) => { setFormData({ ...formData, maleDonorId: e.target.value }); setMaleVerification(null); }}
+                    required />
+                  <small style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px', display: 'block' }}>This Donor ID will be used for petri dish validation</small>
+                </div>
+                <ScanBox patientType="male" scanning={scanningMale} preview={maleScanPreview} verification={maleVerification} typedName={formData.maleDonorId || 'DONOR'} typedMpeid={formData.maleDonorId} />
+              </>
+            )}
           </div>
 
           {/* Female Patient */}
           <div style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: '14px', padding: '1.5rem', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '0.75rem' }}>
               <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'linear-gradient(135deg, #f093fb, #f5576c)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.9rem', fontWeight: 700, flexShrink: 0 }}>F</div>
               <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#1a202c' }}>Female Patient</h3>
             </div>
 
+            {/* Self / Donor radio */}
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, color: femaleType === 'self' ? '#f093fb' : '#64748b' }}>
+                <input type="radio" name="femaleType" value="self" checked={femaleType === 'self'} onChange={() => setFemaleType('self')} style={{ accentColor: '#f093fb' }} /> Self
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, color: femaleType === 'donor' ? '#f59e0b' : '#64748b' }}>
+                <input type="radio" name="femaleType" value="donor" checked={femaleType === 'donor'} onChange={() => setFemaleType('donor')} style={{ accentColor: '#f59e0b' }} /> Donor
+              </label>
+            </div>
+
+            {/* Existing female patient details — always shown */}
             <div style={fieldStyle}>
               <label style={labelStyle}>Full Name <span style={{ color: '#e11d48' }}>*</span></label>
               <input style={inputStyle} type="text" placeholder="e.g. PRACHI JAIN"
@@ -409,7 +481,6 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
                 onBlur={() => setFormData(p => ({ ...p, femaleName: normalizeName(p.femaleName) }))}
                 required />
             </div>
-
             <div style={fieldStyle}>
               <label style={labelStyle}>MPID <span style={{ color: '#e11d48' }}>*</span></label>
               <input style={inputStyle} type="text" placeholder="e.g. ID-102192605"
@@ -420,21 +491,55 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
               <small style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px', display: 'block' }}>Enter number only or with ID- prefix</small>
             </div>
 
-            <ScanBox
-              patientType="female"
-              scanning={scanningFemale}
-              preview={femaleScanPreview}
-              verification={femaleVerification}
-              typedName={formData.femaleName}
-              typedMpeid={formData.femaleMpeid}
-            />
+            {femaleType === 'self' && (
+              <ScanBox patientType="female" scanning={scanningFemale} preview={femaleScanPreview} verification={femaleVerification} typedName={formData.femaleName} typedMpeid={formData.femaleMpeid} />
+            )}
+
+            {/* Donor fields — shown when donor is selected */}
+            {femaleType === 'donor' && (
+              <div style={{ marginTop: '1rem', padding: '1rem', background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '10px' }}>
+                <p style={{ margin: '0 0 0.75rem', fontWeight: 700, fontSize: '0.88rem', color: '#92400e' }}>Female Donor Details</p>
+                <div style={fieldStyle}>
+                  <label style={labelStyle}>Donor Name <span style={{ color: '#e11d48' }}>*</span></label>
+                  <input style={inputStyle} type="text" placeholder="e.g. DONOR NAME"
+                    value={formData.femaleDonorName}
+                    onChange={(e) => setFormData({ ...formData, femaleDonorName: e.target.value })}
+                    onBlur={() => setFormData(p => ({ ...p, femaleDonorName: normalizeName(p.femaleDonorName) }))}
+                    required />
+                </div>
+                <div style={fieldStyle}>
+                  <label style={labelStyle}>Donor MPID <span style={{ color: '#e11d48' }}>*</span></label>
+                  <input style={inputStyle} type="text" placeholder="e.g. ID-999888777"
+                    value={formData.femaleDonorMpeid}
+                    onChange={(e) => setFormData({ ...formData, femaleDonorMpeid: e.target.value })}
+                    onBlur={() => setFormData(p => ({ ...p, femaleDonorMpeid: normalizeMpeid(p.femaleDonorMpeid) }))}
+                    required />
+                </div>
+                <div style={fieldStyle}>
+                  <label style={labelStyle}>Donor ID <span style={{ color: '#e11d48' }}>*</span></label>
+                  <input style={inputStyle} type="text" placeholder="e.g. D-54321"
+                    value={formData.femaleDonorId}
+                    onChange={(e) => setFormData({ ...formData, femaleDonorId: e.target.value })}
+                    required />
+                </div>
+                <ScanBox patientType="female" scanning={scanningFemale} preview={femaleScanPreview} verification={femaleVerification} typedName={formData.femaleDonorName} typedMpeid={formData.femaleDonorMpeid} />
+                <div style={fieldStyle}>
+                  <label style={labelStyle}>Remark</label>
+                  <textarea style={{ ...inputStyle, minHeight: '60px', resize: 'vertical', fontFamily: 'inherit' }}
+                    placeholder="Any notes about the donor..."
+                    value={formData.femaleDonorRemark}
+                    onChange={(e) => setFormData({ ...formData, femaleDonorRemark: e.target.value })} />
+                </div>
+                <small style={{ fontSize: '0.78rem', color: '#92400e' }}>Petri dish validation will use Donor Name + Donor MPID. Female patient details are kept for the record.</small>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Mismatch warning above submit */}
         {hasMismatch && (
           <div style={{ background: '#fffbeb', border: '1.5px solid #f59e0b', borderRadius: '10px', padding: '0.85rem 1rem', marginBottom: '1.25rem', fontSize: '0.85rem', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <IconWarning /> Resolve the wristband mismatch above before registering.
+            <IconWarning /> Resolve the mismatch above before registering.
           </div>
         )}
 
@@ -444,7 +549,7 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#667eea" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             Procedure Details
           </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             <div>
               <label style={labelStyle}>Procedure Date <span style={{ color: '#e11d48' }}>*</span></label>
               <input style={inputStyle} type="date"

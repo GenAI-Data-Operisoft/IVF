@@ -1,6 +1,6 @@
 /**
- * Oocyte Impression — 2-step screen:
- *   Step 1: Oocyte Impression validation (label scan + AI — reuses StageCapture)
+ * Oocyte Morphology — 2-step screen:
+ *   Step 1: Oocyte Morphology validation (label scan + AI — reuses StageCapture)
  *   Step 2: Annotated Patient Details — microscopic image upload, patient details
  *           annotated on image (same pipeline as ICSI Documentation)
  */
@@ -26,7 +26,7 @@ const IconUpload = () => (
   </svg>
 );
 
-function OocyteImpression({ sessionId, caseData, onComplete, onViewStatus }) {
+function OocyteMorphology({ sessionId, caseData, onComplete, onViewStatus }) {
   const { canUploadImage } = usePermissionStore();
   const showUpload = canUploadImage();
 
@@ -55,10 +55,10 @@ function OocyteImpression({ sessionId, caseData, onComplete, onViewStatus }) {
     try {
       // Load annotated images (same table as ICSI doc)
       const data = await api.getAnnotatedImages(sessionId, 'denudation');
-      // Filter only oocyte-impression images
+      // Filter only oocyte-morphology images
       setAnnotatedImages(data.images || []);
       // Load remark
-      const imp = await api.getOocyteImpression(sessionId);
+      const imp = await api.getOocyteMorphology(sessionId);
       setExistingRemark(imp.remark || '');
       setRemark(imp.remark || '');
     } catch { /* no data yet */ }
@@ -99,7 +99,7 @@ function OocyteImpression({ sessionId, caseData, onComplete, onViewStatus }) {
     try {
       const file = await compressImage(rawFile);
       const imageNumber = annotatedImages.length + 1;
-      const { uploadUrl } = await api.getPresignedUrlForAnnotatedImage(sessionId, imageNumber, 'oocyte-impression');
+      const { uploadUrl } = await api.getPresignedUrlForAnnotatedImage(sessionId, imageNumber, 'oocyte-morphology');
       await api.uploadImage(uploadUrl, file);
       // Start polling for annotated result
       setProcessing(true);
@@ -136,7 +136,7 @@ function OocyteImpression({ sessionId, caseData, onComplete, onViewStatus }) {
   const handleSaveRemark = async () => {
     setSavingRemark(true);
     try {
-      await api.saveOocyteImpressionRemark(sessionId, remark);
+      await api.saveOocyteMorphologyRemark(sessionId, remark);
       setExistingRemark(remark);
       setRemarkSaved(true);
       setTimeout(() => setRemarkSaved(false), 3000);
@@ -151,8 +151,8 @@ function OocyteImpression({ sessionId, caseData, onComplete, onViewStatus }) {
     }
     setCompleting(true);
     try {
-      if (remark !== existingRemark) await api.saveOocyteImpressionRemark(sessionId, remark);
-      await api.completeStage(sessionId, 'icsi_documentation');
+      if (remark !== existingRemark) await api.saveOocyteMorphologyRemark(sessionId, remark);
+      await api.completeStage(sessionId, 'denudation');
       onComplete();
     } catch { setError('Failed to complete. Please try again.'); }
     finally { setCompleting(false); }
@@ -185,7 +185,7 @@ function OocyteImpression({ sessionId, caseData, onComplete, onViewStatus }) {
             Back
           </button>
           <div>
-            <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#1a202c' }}>Oocyte Impression</h2>
+            <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#1a202c' }}>Oocyte Morphology</h2>
             <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>Complete both steps to finish this stage</p>
           </div>
         </div>
@@ -200,7 +200,7 @@ function OocyteImpression({ sessionId, caseData, onComplete, onViewStatus }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div style={stepBadgeStyle(step1Done, !step1Done)}>{step1Done ? '✓' : '1'}</div>
           <span style={{ fontWeight: 600, fontSize: '0.9rem', color: step1Done ? '#16a34a' : '#667eea' }}>
-            Oocyte Impression
+            Oocyte Morphology
           </span>
         </div>
         <div style={{ flex: 1, height: '2px', background: step1Done ? '#22c55e' : '#e2e8f0', borderRadius: '2px' }} />
@@ -212,13 +212,13 @@ function OocyteImpression({ sessionId, caseData, onComplete, onViewStatus }) {
         </div>
       </div>
 
-      {/* ── STEP 1: Oocyte Impression Validation ── */}
+      {/* ── STEP 1: Oocyte Morphology Validation ── */}
       <div style={cardStyle(!step1Done, step1Done)}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1rem' }}>
           <div style={stepBadgeStyle(step1Done, !step1Done)}>{step1Done ? '✓' : '1'}</div>
           <div>
             <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#1a202c' }}>
-              Step 1 — Oocyte Impression
+              Step 1 — Oocyte Morphology
             </h3>
             <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
               {step1Done ? 'Validation complete' : 'Upload label image for AI validation'}
@@ -372,7 +372,7 @@ function OocyteImpression({ sessionId, caseData, onComplete, onViewStatus }) {
                 {completing ? 'Completing...' : (
                   <>
                     <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    Complete Oocyte Impression
+                    Complete Oocyte Morphology
                   </>
                 )}
               </button>
@@ -387,4 +387,4 @@ function OocyteImpression({ sessionId, caseData, onComplete, onViewStatus }) {
   );
 }
 
-export default OocyteImpression;
+export default OocyteMorphology;

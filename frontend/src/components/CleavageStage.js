@@ -255,10 +255,10 @@ function SectionHeader({ num, title, subtitle, badge }) {
 
 // Sample Validation + Annotated Details (two-column, reusable for Day 3, Day 5/6, FET)
 function SampleValidationWithAnnotation({ sessionId, caseData, showUpload, stageKey, onViewStatus }) {
-  // Use 'culture' stage ID for presigned URL — it's in STAGE_FOLDERS on the backend
-  const STAGE_OBJ = { id: 'culture', name: 'Sample Validation', images: 1 };
-  const cultureStatus = caseData?.stages?.culture?.status;
-  const [validated, setValidated] = React.useState(cultureStatus === 'completed' || cultureStatus === 'failed');
+  // Each stage uses its own stage ID so extractions don't overlap between Day 3, Day 5/6, FET
+  const STAGE_OBJ = { id: stageKey === 'blastocyst' ? 'blastocyst' : 'icsi_documentation', name: 'Sample Validation', images: 1 };
+  const stageStatus = caseData?.stages?.[stageKey === 'blastocyst' ? 'blastocyst' : 'icsi_documentation']?.status;
+  const [validated, setValidated] = React.useState(stageStatus === 'completed' || stageStatus === 'failed');
   const [annotUploading, setAnnotUploading] = React.useState(false);
   const [annotProcessing, setAnnotProcessing] = React.useState(false);
   const [annotatedImages, setAnnotatedImages] = React.useState([]);
@@ -511,7 +511,7 @@ function EmbryoTransferSection({ sessionId, caseData, showUpload, stageKey }) {
 
 // Sub 3: Cryopreservation
 function CryopreservationSection({ sessionId, stageKey }) {
-  const [form, setForm] = React.useState({ can: '', canister: '', goblet: '', visoColor: '' });
+  const [form, setForm] = React.useState({ can: '', canister: '', goblet: '', visoColor: '', cryolockId: '', cryolockColor: '' });
   const [customCan, setCustomCan] = React.useState('');
   const [saving, setSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
@@ -528,20 +528,33 @@ function CryopreservationSection({ sessionId, stageKey }) {
   const handleSave = async () => {
     setSaving(true); setError(null);
     try {
-      const newRecord = { can: canValue, canister: form.canister.toUpperCase(), goblet: form.goblet, visoColor: form.visoColor, savedAt: new Date().toISOString() };
+      const newRecord = { can: canValue, canister: form.canister.toUpperCase(), goblet: form.goblet, visoColor: form.visoColor, cryolockId: form.cryolockId.trim(), cryolockColor: form.cryolockColor, savedAt: new Date().toISOString() };
       const updated = [...records, newRecord];
       await api.saveEmbryoStageData(sessionId, stageKey, { cryo_records: updated });
       setRecords(updated);
-      setForm({ can: '', canister: '', goblet: '', visoColor: '' }); setCustomCan('');
+      setForm({ can: '', canister: '', goblet: '', visoColor: '', cryolockId: '', cryolockColor: '' }); setCustomCan('');
       setSaved(true); setTimeout(() => setSaved(false), 2000);
     } catch { setError('Failed to save.'); } finally { setSaving(false); }
   };
+
+  const CRYOLOCK_COLORS = ['Clear', 'Blue', 'Green', 'Yellow', 'Pink', 'Red', 'Orange', 'Purple', 'White'];
 
   return (
     <div>
       <p style={{ fontSize: '0.82rem', color: '#64748b', marginBottom: '1rem' }}>Record where the embryo is stored in the nitrogen can system.</p>
       {error && <div style={{ background: '#ffebee', color: '#c62828', padding: '0.6rem 0.85rem', borderRadius: '8px', marginBottom: '0.75rem', fontSize: '0.82rem' }}>{error}</div>}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
+        <div>
+          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: '0.3rem' }}>Cryolock ID</label>
+          <input style={inp} type="text" placeholder="e.g. CL-001" value={form.cryolockId} onChange={e => setForm(f => ({ ...f, cryolockId: e.target.value }))} />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: '0.3rem' }}>Cryolock Color</label>
+          <select style={inp} value={form.cryolockColor} onChange={e => setForm(f => ({ ...f, cryolockColor: e.target.value }))}>
+            <option value="">Select...</option>
+            {CRYOLOCK_COLORS.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
         <div>
           <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: '0.3rem' }}>Can *</label>
           <select style={inp} value={form.can} onChange={e => setForm(f => ({ ...f, can: e.target.value }))}>
@@ -588,6 +601,18 @@ function CryopreservationSection({ sessionId, stageKey }) {
                 <span>Goblet {r.goblet}</span>
                 <span style={{ color: '#64748b' }}>→</span>
                 <span style={{ background: r.visoColor.toLowerCase() === 'white' ? '#f1f5f9' : r.visoColor.toLowerCase() === 'yellow' ? '#fef9c3' : r.visoColor.toLowerCase(), color: ['white','yellow'].includes(r.visoColor.toLowerCase()) ? '#374151' : 'white', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, border: '1px solid #e2e8f0' }}>{r.visoColor}</span>
+                {r.cryolockId && (
+                  <>
+                    <span style={{ color: '#64748b' }}>→</span>
+                    <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>🔒 {r.cryolockId}</span>
+                  </>
+                )}
+                {r.cryolockColor && (
+                  <>
+                    <span style={{ color: '#64748b' }}>→</span>
+                    <span style={{ background: r.cryolockColor.toLowerCase() === 'clear' ? '#f1f5f9' : r.cryolockColor.toLowerCase() === 'white' ? '#f1f5f9' : r.cryolockColor.toLowerCase(), color: ['clear','white','yellow'].includes(r.cryolockColor.toLowerCase()) ? '#374151' : 'white', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, border: '1px solid #e2e8f0' }}>CL: {r.cryolockColor}</span>
+                  </>
+                )}
               </div>
             ))}
           </div>

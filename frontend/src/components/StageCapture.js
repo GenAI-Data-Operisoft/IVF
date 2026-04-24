@@ -31,7 +31,7 @@ const RESOLUTION_CATEGORIES = [
   "Other (specify in notes)"
 ];
 
-function SpermPreparationUpload({ sessionId, caseData, uploadedImages, uploading, showUpload, onCapture, onBothUploaded }) {
+function SpermPreparationUpload({ sessionId, caseData, uploadedImages, uploading, showUpload, onCapture, onBothUploaded, spermSubValidations = {} }) {
   const [remark, setRemark] = React.useState('');
   const [existingRemark, setExistingRemark] = React.useState('');
   const [savingRemark, setSavingRemark] = React.useState(false);
@@ -45,6 +45,8 @@ function SpermPreparationUpload({ sessionId, caseData, uploadedImages, uploading
 
   const collectionUploaded = uploadedImages.some(img => img.patientType === 'collection');
   const processUploaded = uploadedImages.some(img => img.patientType === 'process');
+  const collectionValidated = spermSubValidations.collection;
+  const processValidated = spermSubValidations.process;
 
   const handleCapture = (e, type) => {
     onCapture(e, type);
@@ -67,13 +69,18 @@ function SpermPreparationUpload({ sessionId, caseData, uploadedImages, uploading
     boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
   };
 
-  const SubSection = ({ type, label, uploaded, previewUrl }) => (
-    <div style={subCardStyle}>
+  const SubSection = ({ type, label, uploaded, previewUrl, validationResult: subValidation }) => (
+    <div style={{...subCardStyle, border: subValidation ? (subValidation.overall_match ? '1.5px solid #22c55e' : '1.5px solid #f59e0b') : '1.5px solid #e2e8f0'}}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.85rem' }}>
-        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg,#667eea,#764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.75rem', fontWeight: 700, flexShrink: 0 }}>
-          {type === 'collection' ? 'CC' : 'PS'}
+        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: subValidation?.overall_match ? '#22c55e' : 'linear-gradient(135deg,#667eea,#764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.75rem', fontWeight: 700, flexShrink: 0 }}>
+          {subValidation?.overall_match ? '✓' : (type === 'collection' ? 'CC' : 'PS')}
         </div>
         <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#1a202c' }}>{label}</h4>
+        {subValidation && (
+          <span style={{ marginLeft: 'auto', background: subValidation.overall_match ? '#dcfce7' : '#fef3c7', color: subValidation.overall_match ? '#16a34a' : '#92400e', padding: '2px 10px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 700 }}>
+            {subValidation.overall_match ? '✓ Validated' : '⚠ Mismatch'}
+          </span>
+        )}
       </div>
 
       {/* Male patient info */}
@@ -85,9 +92,13 @@ function SpermPreparationUpload({ sessionId, caseData, uploadedImages, uploading
       {uploaded ? (
         <div>
           <img src={previewUrl} alt={label} style={{ width: '100%', height: '120px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '0.5rem' }} />
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#dcfce7', color: '#16a34a', padding: '3px 10px', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 600 }}>
-            ✓ Image Uploaded
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: subValidation?.overall_match ? '#dcfce7' : '#dcfce7', color: subValidation?.overall_match ? '#16a34a' : '#16a34a', padding: '3px 10px', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 600 }}>
+            {subValidation?.overall_match ? '✓ Validated' : '✓ Image Uploaded'}
           </div>
+        </div>
+      ) : subValidation ? (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: subValidation.overall_match ? '#dcfce7' : '#fef3c7', color: subValidation.overall_match ? '#16a34a' : '#92400e', padding: '6px 12px', borderRadius: '10px', fontSize: '0.82rem', fontWeight: 600 }}>
+          {subValidation.overall_match ? '✓ Validation Successful' : '⚠ Validation Failed'}
         </div>
       ) : (
         <div>
@@ -130,12 +141,14 @@ function SpermPreparationUpload({ sessionId, caseData, uploadedImages, uploading
           label="Collection Container"
           uploaded={collectionUploaded}
           previewUrl={uploadedImages.find(img => img.patientType === 'collection')?.previewUrl}
+          validationResult={collectionValidated}
         />
         <SubSection
           type="process"
-          label="Process Sperm Sample"
+          label="Processed Sperm Sample"
           uploaded={processUploaded}
           previewUrl={uploadedImages.find(img => img.patientType === 'process')?.previewUrl}
+          validationResult={processValidated}
         />
       </div>
 
@@ -160,9 +173,19 @@ function SpermPreparationUpload({ sessionId, caseData, uploadedImages, uploading
       </div>
 
       {/* Status hint */}
-      {(!collectionUploaded || !processUploaded) && (
+      {(!collectionValidated || !processValidated) && !collectionUploaded && !processUploaded && (
         <p style={{ fontSize: '0.82rem', color: '#94a3b8', textAlign: 'center' }}>
-          Upload both images to start validation
+          Upload both images to complete validation
+        </p>
+      )}
+      {collectionValidated && !processValidated && !processUploaded && (
+        <p style={{ fontSize: '0.82rem', color: '#667eea', textAlign: 'center', fontWeight: 600 }}>
+          ✓ Collection Container validated — now upload Processed Sperm Sample
+        </p>
+      )}
+      {!collectionValidated && processValidated && !collectionUploaded && (
+        <p style={{ fontSize: '0.82rem', color: '#667eea', textAlign: 'center', fontWeight: 600 }}>
+          ✓ Processed Sperm Sample validated — now upload Collection Container
         </p>
       )}
     </div>
@@ -189,6 +212,10 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
   const [overrideJustification, setOverrideJustification] = useState('');
   const [submittingOverride, setSubmittingOverride] = useState(false);
 
+  // Sperm Preparation: track per-subsection validation (collection / process)
+  const [spermSubValidations, setSpermSubValidations] = useState({ collection: null, process: null });
+  const [spermProcessingType, setSpermProcessingType] = useState(null); // which sub-section is currently processing
+
   // Check if this is the last stage
   const isLastStage = stage.id === STAGES[STAGES.length - 1].id;
 
@@ -206,6 +233,8 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
     setError(null);
     setShowPreviousResult(false);
     setStuckInProgress(false);
+    setSpermSubValidations({ collection: null, process: null });
+    setSpermProcessingType(null);
     
     if (isAlreadyCompleted) {
       // Stage done — load previous result
@@ -445,8 +474,9 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
       
       // For male sample collection, trigger validation immediately per sub-section
       if (stage.id === 'male_sample_collection') {
+        setSpermProcessingType(patientType);
         setProcessing(true);
-        pollForValidation();
+        pollForValidation(patientType);
       } else {
         // For other stages, check if all images uploaded
         if (currentImage >= stage.images) {
@@ -463,7 +493,7 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
     }
   };
 
-  const pollForValidation = async () => {
+  const pollForValidation = async (spermPatientType = null) => {
     let attempts = 0;
     const maxAttempts = 30;
     
@@ -499,11 +529,33 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
           
           // Accept if new extraction with validation, OR only extraction and has validation
           if (latestExtraction.validation_result && (isNew || initialExtractionIds.size === 0)) {
-            setValidationResult(latestExtraction.validation_result);
-            setProcessing(false);
+            // Sperm Preparation: track per-subsection validation
+            if (stage.id === 'male_sample_collection' && spermPatientType) {
+              setSpermSubValidations(prev => {
+                const updated = { ...prev, [spermPatientType]: latestExtraction.validation_result };
+                // If both subsections are now validated, show the combined result
+                if (updated.collection && updated.process) {
+                  const bothMatch = updated.collection.overall_match && updated.process.overall_match;
+                  setValidationResult({
+                    overall_match: bothMatch,
+                    mismatches: [
+                      ...(updated.collection.mismatches || []).map(m => ({ ...m, field: `Collection: ${m.field}` })),
+                      ...(updated.process.mismatches || []).map(m => ({ ...m, field: `Processed: ${m.field}` })),
+                    ],
+                    manually_overridden: updated.collection.manually_overridden || updated.process.manually_overridden,
+                  });
+                }
+                return updated;
+              });
+              setProcessing(false);
+              setSpermProcessingType(null);
+            } else {
+              setValidationResult(latestExtraction.validation_result);
+              setProcessing(false);
             
-            if (wasRetry && latestExtraction.validation_result.overall_match) {
-              setShowResolutionModal(true);
+              if (wasRetry && latestExtraction.validation_result.overall_match) {
+                setShowResolutionModal(true);
+              }
             }
             
             return;
@@ -693,6 +745,7 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
               showUpload={showUpload}
               onCapture={handleImageCapture}
               onBothUploaded={() => { setProcessing(true); pollForValidation(); }}
+              spermSubValidations={spermSubValidations}
             />
           ) : (
             // Standard layout for other stages
@@ -763,7 +816,7 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
       {processing && (
         <div className="processing-message">
           <img src="https://d1nmtja0c4ok3x.cloudfront.net/IVFgif.gif" alt="Processing..." style={{ width: '80px', height: '80px', objectFit: 'contain' }} />
-          <p>Processing images with {caseData.model_config.model_name.replace(/\s*⭐.*$/, '').replace(/\s*\(.*?\)\s*$/, '')}...</p>
+          <p>Processing {spermProcessingType === 'collection' ? 'Collection Container' : spermProcessingType === 'process' ? 'Processed Sperm Sample' : 'images'} with {caseData.model_config.model_name.replace(/\s*⭐.*$/, '').replace(/\s*\(.*?\)\s*$/, '')}...</p>
           <p className="small">This may take 20-30 seconds</p>
           <button
             onClick={() => {
