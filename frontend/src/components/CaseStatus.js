@@ -156,6 +156,12 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
           </svg>
         );
+      case 'skipped':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/>
+          </svg>
+        );
       case 'failed':
         return (
           <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f44336" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -242,7 +248,7 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
               <div key={stage.id} className={`stage-item ${stageData.status}`} style={{ opacity: !isUnlocked && stageData.status === 'pending' ? 0.55 : 1 }}>
                 <span className="stage-icon">{getStageIcon(stageData.status)}</span>
                 <div className="stage-details">
-                  <h4>{stage.name}</h4>
+                  <h4>{stage.name}{stage.optional && <span style={{ marginLeft: '0.5rem', fontSize: '0.72rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '4px', padding: '1px 6px', fontWeight: 600 }}>Optional</span>}</h4>
                   <p>Status: <strong>{stageData.status}</strong></p>
                   <p>Images: {(stageData.status === 'completed' || stageData.status === 'failed') 
                     ? `${stageData.images_required || stage.images} / ${stageData.images_required || stage.images}`

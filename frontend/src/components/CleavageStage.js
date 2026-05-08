@@ -8,6 +8,8 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import usePermissionStore from '../store/permissionStore';
 import StageCapture from './StageCapture';
+import ImageCropModal from './ImageCropModal';
+
 
 const IconUpload = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -226,7 +228,7 @@ function compressImg(file) {
     const img = new Image(); const url = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(url);
-      const canvas = document.createElement('canvas'); const MAX = 1920;
+      const canvas = document.createElement('canvas'); const MAX = 1280;
       let { width, height } = img;
       if (width > MAX || height > MAX) { if (width > height) { height = Math.round(height * MAX / width); width = MAX; } else { width = Math.round(width * MAX / height); height = MAX; } }
       canvas.width = width; canvas.height = height;
@@ -263,6 +265,7 @@ function SampleValidationWithAnnotation({ sessionId, caseData, showUpload, stage
   const [annotProcessing, setAnnotProcessing] = React.useState(false);
   const [annotatedImages, setAnnotatedImages] = React.useState([]);
   const [error, setError] = React.useState(null);
+  const [pendingAnnotCropFile, setPendingAnnotCropFile] = React.useState(null);
 
   const stageType = stageKey + '_sample';
 
@@ -272,26 +275,39 @@ function SampleValidationWithAnnotation({ sessionId, caseData, showUpload, stage
     }
   }, [validated, sessionId, stageType]);
 
-  const handleAnnotUpload = async (e) => {
+  const handleAnnotCapture = (e) => {
     const rawFile = e.target.files[0]; if (!rawFile) return;
+    setPendingAnnotCropFile(rawFile);
+  };
+
+  const handleAnnotCroppedImage = async (croppedFile) => {
+    setPendingAnnotCropFile(null);
     setAnnotUploading(true); setError(null);
     try {
-      const file = await compressImg(rawFile);
+      const file = await compressImg(croppedFile);
       const num = annotatedImages.length + 1;
       const { uploadUrl } = await api.getPresignedUrlForAnnotatedImage(sessionId, num, stageKey + '-sample');
       await api.uploadImage(uploadUrl, file);
       setAnnotProcessing(true);
+      // Poll for annotation
       let attempts = 0;
+      const maxAttempts = 90;
       const poll = async () => {
         try {
           const data = await api.getAnnotatedImages(sessionId, stageType);
-          const img = data.images.find(i => i.oocyte_number === num);
-          if (img && img.annotation_status === 'completed') { setAnnotatedImages(data.images); setAnnotProcessing(false); return; }
-          attempts++; if (attempts < 45) setTimeout(poll, 2000); else { setError('Annotation timeout.'); setAnnotProcessing(false); }
+          const newImage = data.images.find(img => img.oocyte_number === num);
+          if (newImage && newImage.annotation_status === 'completed') {
+            setAnnotatedImages(data.images || []);
+            setAnnotProcessing(false);
+            return;
+          }
+          attempts++;
+          if (attempts < maxAttempts) setTimeout(poll, 2000);
+          else { setError('Annotation timeout. Please refresh.'); setAnnotProcessing(false); }
         } catch (err) { setError(err.message); setAnnotProcessing(false); }
       };
       poll();
-    } catch (err) { setError(err.message); } finally { setAnnotUploading(false); }
+    } catch (err) { setError(err.message); setAnnotProcessing(false); } finally { setAnnotUploading(false); }
   };
 
   return (
@@ -315,8 +331,8 @@ function SampleValidationWithAnnotation({ sessionId, caseData, showUpload, stage
           <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.6rem' }}>Upload microscopic image — patient details annotated on it</p>
           {!annotProcessing && (
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
-              {showUpload && (<label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAnnotUpload} disabled={annotUploading || !validated} /><span className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}><IconUpload />{annotUploading ? '...' : 'Upload'}</span></label>)}
-              <label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleAnnotUpload} disabled={annotUploading || !validated} /><span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}><IconCamera />{annotUploading ? '...' : 'Photo'}</span></label>
+              {showUpload && (<label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAnnotCapture} disabled={annotUploading || !validated} /><span className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}><IconUpload />{annotUploading ? '...' : 'Upload'}</span></label>)}
+              <label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleAnnotCapture} disabled={annotUploading || !validated} /><span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}><IconCamera />{annotUploading ? '...' : 'Photo'}</span></label>
             </div>
           )}
           {annotProcessing && (<div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0.6rem', background: '#f0f4ff', borderRadius: '6px', marginBottom: '0.6rem' }}><img src="https://d1nmtja0c4ok3x.cloudfront.net/IVFgif.gif" alt="" style={{ width: '20px', height: '20px' }} /><span style={{ fontSize: '0.8rem', color: '#667eea', fontWeight: 600 }}>Annotating...</span></div>)}
@@ -336,6 +352,13 @@ function SampleValidationWithAnnotation({ sessionId, caseData, showUpload, stage
           {annotatedImages.length === 0 && !annotProcessing && validated && <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: 0 }}>Upload microscopic image above</p>}
         </div>
       </div>
+      {pendingAnnotCropFile && (
+        <ImageCropModal
+          imageFile={pendingAnnotCropFile}
+          onCrop={handleAnnotCroppedImage}
+          onCancel={() => setPendingAnnotCropFile(null)}
+        />
+      )}
     </div>
   );
 }
@@ -350,6 +373,7 @@ function EmbryoTransferSection({ sessionId, caseData, showUpload, stageKey }) {
   const [annotUploading, setAnnotUploading] = React.useState(false);
   const [annotProcessing, setAnnotProcessing] = React.useState(false);
   const [annotatedImages, setAnnotatedImages] = React.useState([]);
+  const [pendingAnnotCropFile, setPendingAnnotCropFile] = React.useState(null);
 
   const allPassed = validationResults.length > 0 && validationResults.every(r => r.status === 'pass');
 
@@ -395,35 +419,48 @@ function EmbryoTransferSection({ sessionId, caseData, showUpload, stageKey }) {
             }));
             setValidating(false); return;
           }
-          attempts++; if (attempts < 45) setTimeout(poll, 2000); else { setError('Validation timeout.'); setValidating(false); }
+          attempts++; if (attempts < 90) setTimeout(poll, 2000); else { setError('Validation timeout.'); setValidating(false); }
         } catch (err) { setError(err.message); setValidating(false); }
       };
       poll();
     } catch (err) { setError(err.message); setValidating(false); }
   };
 
-  const handleAnnotUpload = async (e) => {
+  const handleAnnotCapture = (e) => {
     const rawFile = e.target.files[0]; if (!rawFile) return;
+    setPendingAnnotCropFile(rawFile);
+  };
+
+  const handleAnnotCroppedImage = async (croppedFile) => {
+    setPendingAnnotCropFile(null);
     setAnnotUploading(true); setError(null);
     try {
-      const file = await compressImg(rawFile);
+      const file = await compressImg(croppedFile);
       const num = annotatedImages.length + 1;
       const folder = stageKey === 'blastocyst' ? 'blastocyst-transfer' : 'cleavage-transfer';
       const { uploadUrl } = await api.getPresignedUrlForAnnotatedImage(sessionId, num, folder);
       await api.uploadImage(uploadUrl, file);
       setAnnotProcessing(true);
+      // Poll for annotation
       let attempts = 0;
-      const st = stageKey === 'blastocyst' ? 'blastocyst_transfer' : 'cleavage_transfer';
+      const maxAttempts = 90;
       const poll = async () => {
         try {
+          const st = stageKey === 'blastocyst' ? 'blastocyst_transfer' : 'cleavage_transfer';
           const data = await api.getAnnotatedImages(sessionId, st);
-          const img = data.images.find(i => i.oocyte_number === num);
-          if (img && img.annotation_status === 'completed') { setAnnotatedImages(data.images); setAnnotProcessing(false); return; }
-          attempts++; if (attempts < 45) setTimeout(poll, 2000); else { setError('Annotation timeout.'); setAnnotProcessing(false); }
+          const newImage = data.images.find(img => img.oocyte_number === num);
+          if (newImage && newImage.annotation_status === 'completed') {
+            setAnnotatedImages(data.images || []);
+            setAnnotProcessing(false);
+            return;
+          }
+          attempts++;
+          if (attempts < maxAttempts) setTimeout(poll, 2000);
+          else { setError('Annotation timeout. Please refresh.'); setAnnotProcessing(false); }
         } catch (err) { setError(err.message); setAnnotProcessing(false); }
       };
       poll();
-    } catch (err) { setError(err.message); } finally { setAnnotUploading(false); }
+    } catch (err) { setError(err.message); setAnnotProcessing(false); } finally { setAnnotUploading(false); }
   };
 
   return (
@@ -483,8 +520,8 @@ function EmbryoTransferSection({ sessionId, caseData, showUpload, stageKey }) {
           <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.6rem' }}>Upload microscopic image — patient details annotated on it</p>
           {!annotProcessing && (
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
-              {showUpload && (<label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAnnotUpload} disabled={annotUploading || !allPassed} /><span className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}><IconUpload />{annotUploading ? '...' : 'Upload'}</span></label>)}
-              <label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleAnnotUpload} disabled={annotUploading || !allPassed} /><span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}><IconCamera />{annotUploading ? '...' : 'Photo'}</span></label>
+              {showUpload && (<label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAnnotCapture} disabled={annotUploading || !allPassed} /><span className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}><IconUpload />{annotUploading ? '...' : 'Upload'}</span></label>)}
+              <label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleAnnotCapture} disabled={annotUploading || !allPassed} /><span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}><IconCamera />{annotUploading ? '...' : 'Photo'}</span></label>
             </div>
           )}
           {annotProcessing && (<div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0.6rem', background: '#f0f4ff', borderRadius: '6px', marginBottom: '0.6rem' }}><img src="https://d1nmtja0c4ok3x.cloudfront.net/IVFgif.gif" alt="" style={{ width: '20px', height: '20px' }} /><span style={{ fontSize: '0.8rem', color: '#667eea', fontWeight: 600 }}>Annotating...</span></div>)}
@@ -504,6 +541,13 @@ function EmbryoTransferSection({ sessionId, caseData, showUpload, stageKey }) {
           {annotatedImages.length === 0 && !annotProcessing && allPassed && <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: 0 }}>Upload microscopic image above</p>}
         </div>
       </div>
+      {pendingAnnotCropFile && (
+        <ImageCropModal
+          imageFile={pendingAnnotCropFile}
+          onCrop={handleAnnotCroppedImage}
+          onCancel={() => setPendingAnnotCropFile(null)}
+        />
+      )}
     </div>
   );
 }
@@ -636,6 +680,7 @@ function CleavageStage({ sessionId, caseData, onComplete, onViewStatus, stageTit
   const [savingRemark, setSavingRemark] = React.useState(false);
   const [remarkSaved, setRemarkSaved] = React.useState(false);
   const [completing, setCompleting] = React.useState(false);
+  const [pendingCropFile, setPendingCropFile] = React.useState(null);
 
   React.useEffect(() => {
     loadData();
@@ -652,30 +697,45 @@ function CleavageStage({ sessionId, caseData, onComplete, onViewStatus, stageTit
     } catch {}
   };
 
-  const handleImageUpload = async (e) => {
+  const handleImageCapture = (e) => {
     const rawFile = e.target.files[0]; if (!rawFile) return;
+    setPendingCropFile(rawFile);
+  };
+
+  const handleCroppedImage = async (croppedFile) => {
+    setPendingCropFile(null);
     setUploading(true); setError(null);
     try {
-      const file = await compressImg(rawFile);
+      const file = await compressImg(croppedFile);
       const imageNumber = uploadedImages.length + annotatedImages.length + 1;
-      const { uploadUrl, s3Key } = await api.getPresignedUrlForAnnotatedImage(sessionId, imageNumber, stageKey);
+      const { uploadUrl } = await api.getPresignedUrlForAnnotatedImage(sessionId, imageNumber, stageKey);
       await api.uploadImage(uploadUrl, file);
-      setUploadedImages(prev => [...prev, { imageNumber, s3Key, status: 'uploaded' }]);
       setProcessing(true);
-      let attempts = 0;
-      const poll = async () => {
-        try {
-          const data = await api.getAnnotatedImages(sessionId, stageKey);
-          const newImg = data.images.find(img => img.oocyte_number === imageNumber);
-          if (newImg && newImg.annotation_status === 'completed') {
-            setAnnotatedImages(data.images); setProcessing(false); setUploadedImages([]);
-            return;
-          }
-          attempts++; if (attempts < 45) setTimeout(poll, 2000); else { setError('Annotation timeout.'); setProcessing(false); }
-        } catch (err) { setError(err.message); setProcessing(false); }
-      };
-      poll();
+      pollForAnnotatedImage(imageNumber);
     } catch (err) { setError(err.message); } finally { setUploading(false); }
+  };
+
+  const pollForAnnotatedImage = async (imageNumber) => {
+    let attempts = 0;
+    const maxAttempts = 90;
+    const poll = async () => {
+      try {
+        const data = await api.getAnnotatedImages(sessionId, stageKey);
+        const newImage = data.images.find(img => img.oocyte_number === imageNumber);
+        if (newImage && newImage.annotation_status === 'completed') {
+          setAnnotatedImages(data.images);
+          setUploadedImages([]);
+          setProcessing(false);
+          return;
+        }
+        attempts++;
+        if (attempts < maxAttempts) setTimeout(poll, 2000);
+        else { setError('Annotation timeout. Please refresh.'); setProcessing(false); }
+      } catch (err) {
+        setError(err.message); setProcessing(false);
+      }
+    };
+    poll();
   };
 
   const handleDownload = async (image) => {
@@ -742,12 +802,12 @@ function CleavageStage({ sessionId, caseData, onComplete, onViewStatus, stageTit
             <div className="capture-options">
               {showUpload && (
                 <label className="file-input-label">
-                  <input type="file" accept="image/jpeg,image/jpg,image/png" onChange={handleImageUpload} disabled={uploading} />
+                  <input type="file" accept="image/jpeg,image/jpg,image/png" onChange={handleImageCapture} disabled={uploading} />
                   <span className="btn-primary">{uploading ? 'Uploading...' : <><IconUpload /> Upload Image</>}</span>
                 </label>
               )}
               <label className="file-input-label">
-                <input type="file" accept="image/jpeg,image/jpg,image/png" capture="environment" onChange={handleImageUpload} disabled={uploading} />
+                <input type="file" accept="image/jpeg,image/jpg,image/png" capture="environment" onChange={handleImageCapture} disabled={uploading} />
                 <span className="btn-secondary">{uploading ? 'Uploading...' : <><IconCamera /> Take Photo</>}</span>
               </label>
             </div>
@@ -757,7 +817,7 @@ function CleavageStage({ sessionId, caseData, onComplete, onViewStatus, stageTit
           <div className="processing-message">
             <img src="https://d1nmtja0c4ok3x.cloudfront.net/IVFgif.gif" alt="Processing..." style={{ width: '60px', height: '60px', objectFit: 'contain' }} />
             <p>Annotating image with patient information...</p>
-            <p className="small">This may take 10-15 seconds</p>
+            <p className="small">This takes a few seconds</p>
           </div>
         )}
         {annotatedImages.length > 0 && (
@@ -821,6 +881,14 @@ function CleavageStage({ sessionId, caseData, onComplete, onViewStatus, stageTit
         </button>
         <button onClick={onViewStatus} className="btn-secondary">View All Stages</button>
       </div>
+
+      {pendingCropFile && (
+        <ImageCropModal
+          imageFile={pendingCropFile}
+          onCrop={handleCroppedImage}
+          onCancel={() => setPendingCropFile(null)}
+        />
+      )}
     </div>
   );
 }

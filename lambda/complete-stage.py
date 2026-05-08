@@ -25,6 +25,8 @@ def lambda_handler(event, context):
         body = json.loads(event['body'])
         session_id = body['sessionId']
         stage = body['stage']
+        # Allow optional status override (e.g. 'skipped' for optional stages)
+        status = body.get('status', 'completed')
 
         cases_table.update_item(
             Key={'sessionId': session_id},
@@ -35,7 +37,7 @@ def lambda_handler(event, context):
                 '#completed_at': 'completed_at'
             },
             ExpressionAttributeValues={
-                ':status': 'completed',
+                ':status': status,
                 ':completed_at': datetime.utcnow().isoformat()
             }
         )

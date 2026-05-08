@@ -8,7 +8,9 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import { STAGES } from '../config';
 import StageCapture from './StageCapture';
+import ImageCropModal from './ImageCropModal';
 import usePermissionStore from '../store/permissionStore';
+
 
 const ICSI_STAGE = STAGES.find(s => s.id === 'icsi');
 
@@ -57,6 +59,9 @@ function ICSIStage({ sessionId, caseData, onComplete, onViewStatus }) {
   const [remarkSaved, setRemarkSaved] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState(null);
+
+  // Crop modal state
+  const [pendingCropFile, setPendingCropFile] = useState(null);
 
   // Video upload state
   const [videoFile, setVideoFile] = useState(null);
@@ -110,7 +115,7 @@ function ICSIStage({ sessionId, caseData, onComplete, onViewStatus }) {
     img.onload = () => {
       URL.revokeObjectURL(url);
       const canvas = document.createElement('canvas');
-      const MAX = 1920;
+      const MAX = 1280;
       let { width, height } = img;
       if (width > MAX || height > MAX) {
         if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
@@ -128,13 +133,18 @@ function ICSIStage({ sessionId, caseData, onComplete, onViewStatus }) {
     img.src = url;
   });
 
-  const handleImageUpload = async (e) => {
+  const handleImageCapture = (e) => {
     const rawFile = e.target.files[0];
     if (!rawFile) return;
+    setPendingCropFile(rawFile);
+  };
+
+  const handleCroppedImage = async (croppedFile) => {
+    setPendingCropFile(null);
     setUploading(true);
     setError(null);
     try {
-      const file = await compressImage(rawFile);
+      const file = await compressImage(croppedFile);
       const imageNumber = annotatedImages.length + 1;
       const { uploadUrl } = await api.getPresignedUrlForAnnotatedImage(sessionId, imageNumber, 'icsi');
       await api.uploadImage(uploadUrl, file);
@@ -149,6 +159,7 @@ function ICSIStage({ sessionId, caseData, onComplete, onViewStatus }) {
 
   const pollForAnnotatedImage = async (imageNumber) => {
     let attempts = 0;
+    const maxAttempts = 90;
     const poll = async () => {
       try {
         const data = await api.getAnnotatedImages(sessionId, 'icsi_documentation');
@@ -159,9 +170,11 @@ function ICSIStage({ sessionId, caseData, onComplete, onViewStatus }) {
           return;
         }
         attempts++;
-        if (attempts < 45) setTimeout(poll, 2000);
+        if (attempts < maxAttempts) setTimeout(poll, 2000);
         else { setError('Annotation timeout. Please refresh.'); setProcessing(false); }
-      } catch (err) { setError(err.message); setProcessing(false); }
+      } catch (err) {
+        setError(err.message); setProcessing(false);
+      }
     };
     poll();
   };
@@ -350,14 +363,14 @@ function ICSIStage({ sessionId, caseData, onComplete, onViewStatus }) {
                 <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                   {showUpload && (
                     <label style={{ cursor: 'pointer' }}>
-                      <input type="file" accept="image/jpeg,image/jpg,image/png" style={{ display: 'none' }} onChange={handleImageUpload} disabled={uploading} />
+                      <input type="file" accept="image/jpeg,image/jpg,image/png" style={{ display: 'none' }} onChange={handleImageCapture} disabled={uploading} />
                       <span className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.55rem 1.1rem', fontSize: '0.88rem' }}>
                         <IconUpload /> {uploading ? 'Uploading...' : 'Upload Image'}
                       </span>
                     </label>
                   )}
                   <label style={{ cursor: 'pointer' }}>
-                    <input type="file" accept="image/jpeg,image/jpg,image/png" capture="environment" style={{ display: 'none' }} onChange={handleImageUpload} disabled={uploading} />
+                    <input type="file" accept="image/jpeg,image/jpg,image/png" capture="environment" style={{ display: 'none' }} onChange={handleImageCapture} disabled={uploading} />
                     <span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.55rem 1.1rem', fontSize: '0.88rem' }}>
                       <IconCamera /> {uploading ? 'Uploading...' : 'Take Photo'}
                     </span>
@@ -375,7 +388,7 @@ function ICSIStage({ sessionId, caseData, onComplete, onViewStatus }) {
                 <img src="https://d1nmtja0c4ok3x.cloudfront.net/IVFgif.gif" alt="Processing..." style={{ width: '36px', height: '36px', objectFit: 'contain' }} />
                 <div>
                   <p style={{ margin: 0, fontWeight: 600, fontSize: '0.88rem', color: '#667eea' }}>Annotating image with patient details...</p>
-                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#94a3b8' }}>This takes 10–15 seconds</p>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#94a3b8' }}>This takes a few seconds</p>
                 </div>
               </div>
             )}
@@ -522,6 +535,13 @@ function ICSIStage({ sessionId, caseData, onComplete, onViewStatus }) {
           </>
         )}
       </div>
+      {pendingCropFile && (
+        <ImageCropModal
+          imageFile={pendingCropFile}
+          onCrop={handleCroppedImage}
+          onCancel={() => setPendingCropFile(null)}
+        />
+      )}
     </div>
   );
 }

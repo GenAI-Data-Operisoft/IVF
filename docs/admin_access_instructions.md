@@ -7,7 +7,7 @@
 ## System Access Information
 
 ### Frontend Application Access
-- **Production URL:** https://d1nmtja0c4ok3x.cloudfront.net
+- **Production URL:** https://YOUR_CLOUDFRONT_URL
 - **Status:** ✅ Active and Secure (HTTPS enforced)
 - **Browser Requirements:** Modern browsers with JavaScript enabled
 - **Network Requirements:** Internet access (no VPN required)
@@ -31,7 +31,7 @@
 
 1. **Navigate to the Application**
    - Open your web browser
-   - Go to: https://d1nmtja0c4ok3x.cloudfront.net
+   - Go to: https://YOUR_CLOUDFRONT_URL
    - Verify the SSL certificate shows as secure (🔒)
 
 2. **Login to the System**
@@ -129,7 +129,7 @@ If you need to reset the admin password:
 
 **Issue: Cannot access the application**
 - **Check:** Internet connection and firewall settings
-- **Verify:** URL is correct (https://d1nmtja0c4ok3x.cloudfront.net)
+- **Verify:** URL is correct (https://YOUR_CLOUDFRONT_URL)
 - **Solution:** Clear browser cache and cookies
 
 **Issue: Login fails with correct credentials**
@@ -214,7 +214,7 @@ If you need to reset the admin password:
 ## API Access (Advanced Users)
 
 ### API Gateway Information
-- **Base URL:** https://26wy0r8be6.execute-api.ap-south-1.amazonaws.com/prod
+- **Base URL:** https://YOUR_API_GATEWAY_URL/prod
 - **Authentication:** Cognito User Pool tokens required
 - **Available Endpoints:** 15+ REST endpoints
 - **Documentation:** Available in system admin panel
@@ -235,7 +235,7 @@ For automated integrations or advanced users:
 2. **Use Token in API Calls:**
    ```bash
    curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-        https://26wy0r8be6.execute-api.ap-south-1.amazonaws.com/prod/models
+        https://YOUR_API_GATEWAY_URL/prod/models
    ```
 
 ---

@@ -16,6 +16,7 @@ dynamodb = boto3.resource('dynamodb')
 STAGE_TABLE_MAP = {
     'label-validation': os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
     'oocyte-collection': os.environ.get('OOCYTE_TABLE', 'IVF-OocyteCollectionExtractions'),
+    'iui': os.environ.get('MALE_SAMPLE_TABLE', 'IVF-MaleSampleCollectionExtractions'),
     'denudation': os.environ.get('DENUDATION_TABLE', 'IVF-DenudationExtractions'),
     'male-sample-collection': os.environ.get('MALE_SAMPLE_TABLE', 'IVF-MaleSampleCollectionExtractions'),
     'icsi': os.environ.get('ICSI_TABLE', 'IVF-ICSIExtractions'),
@@ -34,6 +35,20 @@ def extract_with_converse_api(image_bytes, stage, model_id, model_name, image_nu
         data_instruction = """
     This is a LABEL VALIDATION stage - you are validating pre-labeled dishes for the FEMALE patient.
     Extract the female patient's information and put it in the female_name and female_mpeid fields.
+    Leave male_name and male_mpeid as null.
+    """
+    elif stage == 'iui':
+        # IUI stage: image_1 = male sperm sample, image_2 = female sample
+        if image_number == 1:
+            data_instruction = """
+    This is an IUI (Intrauterine Insemination) stage - MALE sperm sample label.
+    Extract the MALE patient's information and put it in the male_name and male_mpeid fields.
+    Leave female_name and female_mpeid as null.
+    """
+        else:
+            data_instruction = """
+    This is an IUI (Intrauterine Insemination) stage - FEMALE sample label.
+    Extract the FEMALE patient's information and put it in the female_name and female_mpeid fields.
     Leave male_name and male_mpeid as null.
     """
     elif stage == 'male-sample-collection':
@@ -93,17 +108,24 @@ def extract_with_converse_api(image_bytes, stage, model_id, model_name, image_nu
     
     prompt = f"""
     Analyze this IVF laboratory {stage.replace('-', ' ')} dish/tube image.
-    Extract patient identification information written on the label:
+    Extract patient identification information written on the label.
+    
+    CRITICAL — HOW TO READ THIS IMAGE:
+    - The text is written along the CURVED RIM of a circular petri dish
+    - Read each character carefully one by one — do NOT guess or infer
+    - The name and ID number curve along the top edge of the dish
     
     Look for:
-    - Patient Name(s) (may be handwritten or printed)
-    - MPEID(s) (Medical Patient ID - typically in format "ID-" followed by numbers, like "ID-2569824")
-    - Any dates if visible
+    - Patient Name (handwritten, curved along the rim)
+    - MPEID (Medical Patient ID — a sequence of digits)
     
-    IMPORTANT: The ID prefix is "ID" (capital I and capital D), NOT "10" (one-zero).
-    ONLY correct the 2-character prefix: if the label shows "10-" as the very first two characters before the dash, read it as "ID-".
-    Do NOT modify any digits that come AFTER the "ID-" prefix — preserve them exactly as written on the label.
-    Example: "10-102308917" on label = "ID-102308917" (only the prefix changes, the number 102308917 stays intact).
+    MPEID READING RULES — VERY IMPORTANT:
+    - The MPEID is a continuous sequence of digits written on the label
+    - Read ALL digits exactly as written — do NOT skip or drop any digit
+    - Numbers like "1023456" start with "1" or "10" as part of the actual ID — NOT a prefix
+    - ONLY strip "ID-" or "10-" as a prefix IF there is a clear visible dash/hyphen between it and the rest of the number
+    - If the number has NO dash (e.g. "1023456"), read ALL digits: the MPEID is "1023456"
+    - Never drop leading digits — "1023456" is NOT "23456"
     {digit_guidance}
     
     {data_instruction}
@@ -111,18 +133,17 @@ def extract_with_converse_api(image_bytes, stage, model_id, model_name, image_nu
     Return ONLY a JSON object with this exact structure:
     {{
       "male_name": "extracted name or null",
-      "male_mpeid": "extracted ID or null",
+      "male_mpeid": "digits only, no prefix (e.g. 1023456) or null",
       "female_name": "extracted name or null",
-      "female_mpeid": "extracted ID or null"
+      "female_mpeid": "digits only, no prefix (e.g. 1023456) or null"
     }}
     
     Rules:
     - Convert all names to UPPERCASE
-    - For MPEIDs, use format "ID-" followed by numbers (e.g., "ID-2569824")
-    - If the MPEID starts with "10-" (only the first two chars before the dash), replace with "ID-". Never remove digits after the prefix.
+    - For MPEIDs: return ONLY the digits, no "ID-" prefix
+    - Read every digit — never drop leading digits
     - Remove any extra spaces
     - If information is not visible or unclear, use null
-    - For ICSI stage: Prioritize the label with "ID-" prefix format
     """
     
     # Use Converse API
@@ -215,6 +236,12 @@ def lambda_handler(event, context):
         
         print(f"Processing image: s3://{bucket}/{key}")
         
+        # Skip enhanced images to prevent infinite loop
+        filename = key.split('/')[-1] if '/' in key else key
+        if filename.startswith('enhanced_'):
+            print(f"Skipping enhanced image (already processed): {key}")
+            return {'statusCode': 200, 'body': 'Skipped enhanced image'}
+        
         # Extract stage and session ID from key
         # Format: {stage}/{sessionId}/image_X_timestamp.jpg
         parts = key.split('/')
@@ -244,6 +271,9 @@ def lambda_handler(event, context):
         # Download image from S3
         response = s3_client.get_object(Bucket=bucket, Key=key)
         image_bytes = response['Body'].read()
+        
+        # Enhance image for low-light petri dish OCR (black marker on transparent dish)
+        image_bytes = enhance_for_ocr(image_bytes)
         
         # Extract image number from key (format: image_X_timestamp.jpg)
         image_number = 1
@@ -285,6 +315,20 @@ def extract_text_with_bedrock(image_bytes, stage, model_config, image_number=1):
         data_instruction = """
     This is a LABEL VALIDATION stage - you are validating pre-labeled dishes for the FEMALE patient.
     Extract the female patient's information and put it in the female_name and female_mpeid fields.
+    Leave male_name and male_mpeid as null.
+    """
+    elif stage == 'iui':
+        # IUI stage: image_1 = male sperm sample, image_2 = female sample
+        if image_number == 1:
+            data_instruction = """
+    This is an IUI (Intrauterine Insemination) stage - MALE sperm sample label.
+    Extract the MALE patient's information and put it in the male_name and male_mpeid fields.
+    Leave female_name and female_mpeid as null.
+    """
+        else:
+            data_instruction = """
+    This is an IUI (Intrauterine Insemination) stage - FEMALE sample label.
+    Extract the FEMALE patient's information and put it in the female_name and female_mpeid fields.
     Leave male_name and male_mpeid as null.
     """
     elif stage == 'male-sample-collection':
@@ -344,17 +388,24 @@ def extract_text_with_bedrock(image_bytes, stage, model_config, image_number=1):
     
     prompt = f"""
     Analyze this IVF laboratory {stage.replace('-', ' ')} dish/tube image.
-    Extract patient identification information written on the label:
+    Extract patient identification information written on the label.
+    
+    CRITICAL — HOW TO READ THIS IMAGE:
+    - The text is written along the CURVED RIM of a circular petri dish
+    - Read each character carefully one by one — do NOT guess or infer
+    - The name and ID number curve along the top edge of the dish
     
     Look for:
-    - Patient Name(s) (may be handwritten or printed)
-    - MPEID(s) (Medical Patient ID - typically in format "ID-" followed by numbers, like "ID-2569824")
-    - Any dates if visible
+    - Patient Name (handwritten, curved along the rim)
+    - MPEID (Medical Patient ID — a sequence of digits)
     
-    IMPORTANT: The ID prefix is "ID" (capital I and capital D), NOT "10" (one-zero).
-    ONLY correct the 2-character prefix: if the label shows "10-" as the very first two characters before the dash, read it as "ID-".
-    Do NOT modify any digits that come AFTER the "ID-" prefix — preserve them exactly as written on the label.
-    Example: "10-102308917" on label = "ID-102308917" (only the prefix changes, the number 102308917 stays intact).
+    MPEID READING RULES — VERY IMPORTANT:
+    - The MPEID is a continuous sequence of digits written on the label
+    - Read ALL digits exactly as written — do NOT skip or drop any digit
+    - Numbers like "1023456" start with "1" or "10" as part of the actual ID — NOT a prefix
+    - ONLY strip "ID-" or "10-" as a prefix IF there is a clear visible dash/hyphen between it and the rest of the number
+    - If the number has NO dash (e.g. "1023456"), read ALL digits: the MPEID is "1023456"
+    - Never drop leading digits — "1023456" is NOT "23456"
     {digit_guidance}
     
     {data_instruction}
@@ -362,18 +413,17 @@ def extract_text_with_bedrock(image_bytes, stage, model_config, image_number=1):
     Return ONLY a JSON object with this exact structure:
     {{
       "male_name": "extracted name or null",
-      "male_mpeid": "extracted ID or null",
+      "male_mpeid": "digits only, no prefix (e.g. 1023456) or null",
       "female_name": "extracted name or null",
-      "female_mpeid": "extracted ID or null"
+      "female_mpeid": "digits only, no prefix (e.g. 1023456) or null"
     }}
     
     Rules:
     - Convert all names to UPPERCASE
-    - For MPEIDs, use format "ID-" followed by numbers (e.g., "ID-2569824")
-    - If the MPEID starts with "10-" (only the first two chars before the dash), replace with "ID-". Never remove digits after the prefix.
+    - For MPEIDs: return ONLY the digits, no "ID-" prefix
+    - Read every digit — never drop leading digits
     - Remove any extra spaces
     - If information is not visible or unclear, use null
-    - For ICSI stage: Prioritize the label with "ID-" prefix format
     """
     
     # Encode image to base64
@@ -622,56 +672,88 @@ def normalize_name(name):
 
 def fix_ocr_mpeid(mpeid):
     """
-    Fix common OCR mistakes in MPEID extraction
-    Handles case variations and OCR errors:
-    - "10-35697344" -> "ID-35697344"
-    - "id-35697344" -> "ID-35697344"
-    - "Id-35697344" -> "ID-35697344"
-    - "iD-35697344" -> "ID-35697344"
-    - "I0-35697344" -> "ID-35697344"
-    - "1D-35697344" -> "ID-35697344"
+    Strip any ID-like prefix and return only the numeric part of the MPEID.
+    This avoids OCR confusion between "ID-" and "10-".
+    - "ID-35697344" -> "35697344"
+    - "10-35697344" -> "35697344"
+    - "id-35697344" -> "35697344"
+    - "I0-35697344" -> "35697344"
+    - "1D-35697344" -> "35697344"
+    - "35697344" -> "35697344"
     """
     if not mpeid:
         return mpeid
     
     mpeid_str = str(mpeid).strip()
     
-    # First, handle case variations (id, Id, iD, etc.)
-    # Check if it starts with any case variation of "ID-"
-    if len(mpeid_str) >= 3 and mpeid_str[2] == '-':
-        prefix = mpeid_str[:2].upper()
-        # If the prefix is now "ID", normalize it
-        if prefix == 'ID':
-            return 'ID-' + mpeid_str[3:]
-    
-    # Now handle OCR mistakes (after case normalization)
-    mpeid_upper = mpeid_str.upper()
-    
-    # Common OCR mistakes for "ID-"
-    ocr_corrections = [
-        ('10-', 'ID-'),  # Most common: 10 instead of ID
-        ('I0-', 'ID-'),  # I0 instead of ID (zero instead of D)
-        ('1D-', 'ID-'),  # 1D instead of ID (one instead of I)
-        ('1O-', 'ID-'),  # 1O instead of ID (one and capital O)
-        ('IO-', 'ID-'),  # IO instead of ID (capital I and O)
-        ('lD-', 'ID-'),  # lD instead of ID (lowercase L)
-        ('l0-', 'ID-'),  # l0 instead of ID (lowercase L and zero)
-        ('1l-', 'ID-'),  # 1l instead of ID
-        ('Il-', 'ID-'),  # Il instead of ID
-        ('|D-', 'ID-'),  # |D instead of ID (pipe character)
-        ('|0-', 'ID-'),  # |0 instead of ID
+    # Common OCR prefixes to strip
+    prefixes_to_strip = [
+        'ID-', 'id-', 'Id-', 'iD-',
+        '10-', 'I0-', '1D-', '1O-', 'IO-',
+        'lD-', 'l0-', '1l-', 'Il-', '|D-', '|0-',
     ]
     
-    # Apply corrections
-    for mistake, correction in ocr_corrections:
-        if mpeid_upper.startswith(mistake):
-            return correction + mpeid_str[len(mistake):]
+    mpeid_upper = mpeid_str.upper()
+    for prefix in prefixes_to_strip:
+        if mpeid_upper.startswith(prefix.upper()):
+            mpeid_str = mpeid_str[len(prefix):]
+            break
     
-    # If already starts with ID-, ensure it's uppercase
-    if mpeid_upper.startswith('ID-'):
-        return 'ID-' + mpeid_str[3:]
+    # Return only digits
+    digits_only = ''.join(c for c in mpeid_str if c.isdigit())
     
-    return mpeid_str
+    return digits_only if digits_only else mpeid_str
+
+
+def enhance_for_ocr(image_bytes):
+    """
+    Enhance low-light petri dish image using Pillow for better OCR.
+    Only enhances if image is actually dark — skips enhancement for well-lit images
+    to avoid degrading already-clear captures.
+    """
+    try:
+        from PIL import Image, ImageEnhance, ImageFilter, ImageStat
+        from io import BytesIO
+        
+        img = Image.open(BytesIO(image_bytes))
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # Measure average brightness — skip enhancement if already well-lit
+        stat = ImageStat.Stat(img)
+        avg_brightness = sum(stat.mean[:3]) / 3  # Average across R, G, B channels
+        
+        if avg_brightness > 130:
+            # Image is already well-lit — enhancement would degrade quality
+            print(f"Image brightness {avg_brightness:.1f} > 130, skipping enhancement")
+            buf = BytesIO()
+            img.save(buf, format='JPEG', quality=92)
+            return buf.getvalue()
+        
+        print(f"Image brightness {avg_brightness:.1f} <= 130, applying enhancement")
+        
+        # Boost brightness (low-light compensation)
+        img = ImageEnhance.Brightness(img).enhance(1.5)
+        
+        # Boost contrast (make black marker text stand out)
+        img = ImageEnhance.Contrast(img).enhance(1.6)
+        
+        # Sharpen (make handwriting strokes clearer)
+        img = img.filter(ImageFilter.SHARPEN)
+        img = img.filter(ImageFilter.SHARPEN)  # Double sharpen for marker text
+        
+        # Save back to bytes
+        buf = BytesIO()
+        img.save(buf, format='JPEG', quality=92)
+        enhanced = buf.getvalue()
+        
+        print(f"Pillow enhancement: {len(image_bytes)} → {len(enhanced)} bytes")
+        return enhanced
+        
+    except Exception as e:
+        print(f"Warning: Pillow enhancement failed ({e}), using original")
+        return image_bytes
+
 
 def store_extraction_result(stage_folder, session_id, s3_key, extracted_data):
     """

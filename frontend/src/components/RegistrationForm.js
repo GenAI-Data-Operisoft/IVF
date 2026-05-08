@@ -89,11 +89,8 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
 
   const normalizeMpeid = (mpeid) => {
     if (!mpeid) return mpeid;
-    const trimmed = mpeid.trim().toUpperCase();
-    if (trimmed.startsWith('ID-')) return trimmed;
-    if (trimmed.toLowerCase().startsWith('id-')) return 'ID-' + trimmed.substring(3);
-    if (/^\d+$/.test(trimmed)) return 'ID-' + trimmed;
-    return trimmed;
+    // Strip "ID-" prefix and any non-digit characters, keep only numbers
+    return mpeid.trim().replace(/^[Ii][Dd]-?/i, '').replace(/^10-/, '').replace(/[^0-9]/g, '');
   };
 
   const normalizeName = (name) => {
@@ -431,12 +428,12 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
                 </div>
                 <div style={fieldStyle}>
                   <label style={labelStyle}>MPID <span style={{ color: '#e11d48' }}>*</span></label>
-                  <input style={inputStyle} type="text" placeholder="e.g. ID-102192605"
+                  <input style={inputStyle} type="text" placeholder="e.g. 102192605"
                     value={formData.maleMpeid}
                     onChange={(e) => { setFormData({ ...formData, maleMpeid: e.target.value }); setMaleVerification(null); }}
                     onBlur={() => setFormData(p => ({ ...p, maleMpeid: normalizeMpeid(p.maleMpeid) }))}
                     required />
-                  <small style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px', display: 'block' }}>Enter number only or with ID- prefix</small>
+                  <small style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px', display: 'block' }}>Enter number only (ID- prefix will be removed automatically)</small>
                 </div>
                 <ScanBox patientType="male" scanning={scanningMale} preview={maleScanPreview} verification={maleVerification} typedName={formData.maleName} typedMpeid={formData.maleMpeid} />
               </>
@@ -483,12 +480,12 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
             </div>
             <div style={fieldStyle}>
               <label style={labelStyle}>MPID <span style={{ color: '#e11d48' }}>*</span></label>
-              <input style={inputStyle} type="text" placeholder="e.g. ID-102192605"
+              <input style={inputStyle} type="text" placeholder="e.g. 102192605"
                 value={formData.femaleMpeid}
                 onChange={(e) => { setFormData({ ...formData, femaleMpeid: e.target.value }); setFemaleVerification(null); }}
                 onBlur={() => setFormData(p => ({ ...p, femaleMpeid: normalizeMpeid(p.femaleMpeid) }))}
                 required />
-              <small style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px', display: 'block' }}>Enter number only or with ID- prefix</small>
+              <small style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px', display: 'block' }}>Enter number only (ID- prefix will be removed automatically)</small>
             </div>
 
             {femaleType === 'self' && (
@@ -509,7 +506,7 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
                 </div>
                 <div style={fieldStyle}>
                   <label style={labelStyle}>Donor MPID <span style={{ color: '#e11d48' }}>*</span></label>
-                  <input style={inputStyle} type="text" placeholder="e.g. ID-999888777"
+                  <input style={inputStyle} type="text" placeholder="e.g. 999888777"
                     value={formData.femaleDonorMpeid}
                     onChange={(e) => setFormData({ ...formData, femaleDonorMpeid: e.target.value })}
                     onBlur={() => setFormData(p => ({ ...p, femaleDonorMpeid: normalizeMpeid(p.femaleDonorMpeid) }))}

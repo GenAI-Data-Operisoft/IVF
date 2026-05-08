@@ -59,7 +59,7 @@ export const api = {
   uploadImage: async (uploadUrl, imageFile) => {
     const contentType = imageFile.type || 'image/jpeg';
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    const timeout = setTimeout(() => controller.abort(), 120000);
     try {
       const response = await fetch(uploadUrl, {
         method: 'PUT',
@@ -116,11 +116,11 @@ export const api = {
   },
 
   // Get presigned URL for stage-specific annotated image upload
-  getPresignedUrlForAnnotatedImage: async (sessionId, imageNumber, stageFolder = 'icsi') => {
+  getPresignedUrlForAnnotatedImage: async (sessionId, imageNumber, stageFolder = 'icsi', clientAnnotated = false) => {
     const response = await fetch(`${API_BASE_URL}/presigned-url-icsi-doc`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, imageNumber, stageFolder })
+      body: JSON.stringify({ sessionId, imageNumber, stageFolder, clientAnnotated })
     });
     if (!response.ok) throw new Error('Failed to get upload URL');
     return response.json();
@@ -149,12 +149,12 @@ export const api = {
     return response.json();
   },
 
-  // Complete a stage (mark as completed)
-  completeStage: async (sessionId, stage) => {
+  // Complete a stage (mark as completed or skipped)
+  completeStage: async (sessionId, stage, status = 'completed') => {
     const response = await fetch(`${API_BASE_URL}/complete-stage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, stage })
+      body: JSON.stringify({ sessionId, stage, status })
     });
     if (!response.ok) throw new Error('Failed to complete stage');
     return response.json();
@@ -458,6 +458,37 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}/case/${sessionId}/oocyte-impression`);
     if (!response.ok) throw new Error('Failed to fetch oocyte morphology data');
     return response.json();
+  },
+
+  // ===== EXCEL SHEETS (shared across all users via S3) =====
+  saveExcelData: async (data) => {
+    // Get presigned URL with fixed key
+    const response = await fetch(`${API_BASE_URL}/presigned-url-icsi-doc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'excel', imageNumber: 1, stageFolder: 'excel', fixedKey: 'excel-sheets/shared-workbook.json' })
+    });
+    if (!response.ok) throw new Error('Failed to get upload URL');
+    const { uploadUrl } = await response.json();
+    
+    // Upload JSON data
+    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+    const uploadResp = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'x-amz-server-side-encryption': 'AES256' },
+      body: blob
+    });
+    if (!uploadResp.ok) throw new Error('Failed to upload Excel data');
+    return { success: true };
+  },
+
+  getExcelData: async () => {
+    try {
+      const { downloadUrl } = await api.getImageDownloadUrl('excel-sheets/shared-workbook.json');
+      const response = await fetch(downloadUrl);
+      if (!response.ok) return null;
+      return response.json();
+    } catch { return null; }
   },
 
   // Get audit logs

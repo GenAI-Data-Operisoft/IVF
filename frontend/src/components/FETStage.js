@@ -7,7 +7,9 @@ import React, { useState, useEffect } from "react";
 import { api } from "../api";
 import { STAGES } from "../config";
 import StageCapture from "./StageCapture";
+import ImageCropModal from "./ImageCropModal";
 import usePermissionStore from "../store/permissionStore";
+
 
 const FET_STAGE = STAGES.find(s => s.id === "culture");
 
@@ -27,7 +29,7 @@ function compressImg(file) {
     const img = new Image(); const url = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(url);
-      const canvas = document.createElement("canvas"); const MAX = 1920;
+      const canvas = document.createElement("canvas"); const MAX = 1280;
       let { width, height } = img;
       if (width > MAX || height > MAX) { if (width > height) { height = Math.round(height * MAX / width); width = MAX; } else { width = Math.round(width * MAX / height); height = MAX; } }
       canvas.width = width; canvas.height = height;
@@ -47,6 +49,7 @@ function FETStage({ sessionId, caseData, onComplete, onViewStatus }) {
   const [annotUploading, setAnnotUploading] = useState(false);
   const [annotProcessing, setAnnotProcessing] = useState(false);
   const [annotatedImages, setAnnotatedImages] = useState([]);
+  const [pendingCropFile, setPendingCropFile] = useState(null);
   const [remark, setRemark] = useState("");
   const [existingRemark, setExistingRemark] = useState("");
   const [savingRemark, setSavingRemark] = useState(false);
@@ -59,26 +62,39 @@ function FETStage({ sessionId, caseData, onComplete, onViewStatus }) {
     api.getAnnotatedImages(sessionId, "fet").then(d => setAnnotatedImages(d.images || [])).catch(() => {});
   }, [sessionId]);
 
-  const handleAnnotUpload = async (e) => {
+  const handleAnnotCapture = (e) => {
     const rawFile = e.target.files[0]; if (!rawFile) return;
+    setPendingCropFile(rawFile);
+  };
+
+  const handleCroppedImage = async (croppedFile) => {
+    setPendingCropFile(null);
     setAnnotUploading(true); setError(null);
     try {
-      const file = await compressImg(rawFile);
+      const file = await compressImg(croppedFile);
       const num = annotatedImages.length + 1;
       const { uploadUrl } = await api.getPresignedUrlForAnnotatedImage(sessionId, num, "fet");
       await api.uploadImage(uploadUrl, file);
       setAnnotProcessing(true);
+      // Poll for annotation
       let attempts = 0;
+      const maxAttempts = 90;
       const poll = async () => {
         try {
           const data = await api.getAnnotatedImages(sessionId, "fet");
-          const img = data.images.find(i => i.oocyte_number === num);
-          if (img && img.annotation_status === "completed") { setAnnotatedImages(data.images); setAnnotProcessing(false); return; }
-          attempts++; if (attempts < 45) setTimeout(poll, 2000); else { setError("Annotation timeout."); setAnnotProcessing(false); }
+          const newImage = data.images.find(img => img.oocyte_number === num);
+          if (newImage && newImage.annotation_status === 'completed') {
+            setAnnotatedImages(data.images || []);
+            setAnnotProcessing(false);
+            return;
+          }
+          attempts++;
+          if (attempts < maxAttempts) setTimeout(poll, 2000);
+          else { setError("Annotation timeout. Please refresh."); setAnnotProcessing(false); }
         } catch (err) { setError(err.message); setAnnotProcessing(false); }
       };
       poll();
-    } catch (err) { setError(err.message); } finally { setAnnotUploading(false); }
+    } catch (err) { setError(err.message); setAnnotProcessing(false); } finally { setAnnotUploading(false); }
   };
 
   const handleSaveRemark = async () => {
@@ -140,8 +156,8 @@ function FETStage({ sessionId, caseData, onComplete, onViewStatus }) {
             <p style={{ fontSize: "0.75rem", color: "#64748b", marginBottom: "0.6rem" }}>Upload microscopic image — patient details annotated</p>
             {!annotProcessing && (
               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.6rem" }}>
-                {showUpload && (<label style={{ cursor: "pointer" }}><input type="file" accept="image/*" style={{ display: "none" }} onChange={handleAnnotUpload} disabled={annotUploading || !validated} /><span className="btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}><IconUpload />{annotUploading ? "..." : "Upload"}</span></label>)}
-                <label style={{ cursor: "pointer" }}><input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handleAnnotUpload} disabled={annotUploading || !validated} /><span className="btn-secondary" style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}><IconCamera />{annotUploading ? "..." : "Take Photo"}</span></label>
+                {showUpload && (<label style={{ cursor: "pointer" }}><input type="file" accept="image/*" style={{ display: "none" }} onChange={handleAnnotCapture} disabled={annotUploading || !validated} /><span className="btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}><IconUpload />{annotUploading ? "..." : "Upload"}</span></label>)}
+                <label style={{ cursor: "pointer" }}><input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handleAnnotCapture} disabled={annotUploading || !validated} /><span className="btn-secondary" style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}><IconCamera />{annotUploading ? "..." : "Take Photo"}</span></label>
               </div>
             )}
             {annotProcessing && (<div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "0.6rem", background: "#f0f4ff", borderRadius: "6px", marginBottom: "0.6rem" }}><img src="https://d1nmtja0c4ok3x.cloudfront.net/IVFgif.gif" alt="" style={{ width: "20px", height: "20px" }} /><span style={{ fontSize: "0.8rem", color: "#667eea", fontWeight: 600 }}>Annotating...</span></div>)}
@@ -182,6 +198,14 @@ function FETStage({ sessionId, caseData, onComplete, onViewStatus }) {
         </button>
         <button onClick={onViewStatus} className="btn-secondary">View All Stages</button>
       </div>
+
+      {pendingCropFile && (
+        <ImageCropModal
+          imageFile={pendingCropFile}
+          onCrop={handleCroppedImage}
+          onCancel={() => setPendingCropFile(null)}
+        />
+      )}
     </div>
   );
 }

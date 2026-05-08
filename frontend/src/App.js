@@ -24,6 +24,8 @@ import Login from './components/Login';
 import Signup from './components/Signup';
 import AuditLog from './components/AuditLog';
 import UserManagement from './components/UserManagement';
+import ExcelViewer from './components/ExcelViewer';
+import IUIStage from './components/IUIStage';
 import Chatbot from './components/Chatbot';
 
 // Configure Amplify
@@ -176,6 +178,10 @@ function App() {
 
   const handleViewUserManagement = () => {
     setCurrentView('usermanagement');
+  };
+
+  const handleViewExcel = () => {
+    setCurrentView('excel');
   };
 
   const handleStartCapture = () => {
@@ -339,6 +345,7 @@ function App() {
             onViewMetrics={handleViewMetrics}
             onViewAuditLog={handleViewAuditLog}
             onViewUserManagement={handleViewUserManagement}
+            onViewExcel={handleViewExcel}
             userRole={user?.role}
             user={user}
           />
@@ -364,7 +371,15 @@ function App() {
 
         {currentView === 'capture' && sessionId && (
           <>
-            {STAGES[currentStageIndex].id === 'icsi_documentation' ? (
+            {STAGES[currentStageIndex].id === 'iui' ? (
+              <StageCapture
+                sessionId={sessionId}
+                caseData={caseData}
+                stage={STAGES[currentStageIndex]}
+                onComplete={handleStageComplete}
+                onViewStatus={handleViewStatus}
+              />
+            ) : STAGES[currentStageIndex].id === 'icsi_documentation' ? (
               <CleavageStage
                 sessionId={sessionId}
                 caseData={caseData}
@@ -377,6 +392,26 @@ function App() {
                 caseData={caseData}
                 onComplete={handleStageComplete}
                 onViewStatus={handleViewStatus}
+              />
+            ) : STAGES[currentStageIndex].id === 'day6' ? (
+              <BlastocystStage
+                sessionId={sessionId}
+                caseData={caseData}
+                onComplete={handleStageComplete}
+                onViewStatus={handleViewStatus}
+                stageTitle="Day 6"
+                stageId="day6"
+                stageKey="day6"
+              />
+            ) : STAGES[currentStageIndex].id === 'day7' ? (
+              <BlastocystStage
+                sessionId={sessionId}
+                caseData={caseData}
+                onComplete={handleStageComplete}
+                onViewStatus={handleViewStatus}
+                stageTitle="Day 7"
+                stageId="day7"
+                stageKey="day7"
               />
             ) : STAGES[currentStageIndex].id === 'fertilization_check' ? (
               <FertilizationCheck
@@ -454,6 +489,10 @@ function App() {
 
         {currentView === 'usermanagement' && (
           <UserManagement onBack={handleBackToHome} />
+        )}
+
+        {currentView === 'excel' && (
+          <ExcelViewer onBack={handleBackToHome} user={user} />
         )}
       </main>
 

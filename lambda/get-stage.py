@@ -7,6 +7,7 @@ dynamodb = boto3.resource('dynamodb')
 STAGE_TABLE_MAP = {
     'label_validation':       os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
     'male_sample_collection': os.environ.get('MALE_SAMPLE_TABLE', 'IVF-MaleSampleCollectionExtractions'),
+    'iui':                    os.environ.get('MALE_SAMPLE_TABLE', 'IVF-MaleSampleCollectionExtractions'),
     'oocyte_collection':      os.environ.get('OOCYTE_TABLE', 'IVF-OocyteCollectionExtractions'),
     'denudation':             os.environ.get('DENUDATION_TABLE', 'IVF-DenudationExtractions'),
     'icsi':                   os.environ.get('ICSI_TABLE', 'IVF-ICSIExtractions'),
@@ -15,6 +16,8 @@ STAGE_TABLE_MAP = {
     'fertilization_check':    os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
     'icsi_documentation':     os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
     'blastocyst':             os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
+    'day6':                   os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
+    'day7':                   os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
 }
 
 def lambda_handler(event, context):

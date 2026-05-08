@@ -5,6 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import { STAGES } from '../config';
 import usePermissionStore from '../store/permissionStore';
+import ImageCropModal from './ImageCropModal';
 
 const IconUpload = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -31,7 +32,7 @@ const RESOLUTION_CATEGORIES = [
   "Other (specify in notes)"
 ];
 
-function SpermPreparationUpload({ sessionId, caseData, uploadedImages, uploading, showUpload, onCapture, onBothUploaded, spermSubValidations = {} }) {
+function SpermPreparationUpload({ sessionId, caseData, uploadedImages, uploading, showUpload, onCapture, onBothUploaded, spermSubValidations = {}, stageId = 'male_sample_collection' }) {
   const [remark, setRemark] = React.useState('');
   const [existingRemark, setExistingRemark] = React.useState('');
   const [savingRemark, setSavingRemark] = React.useState(false);
@@ -83,10 +84,26 @@ function SpermPreparationUpload({ sessionId, caseData, uploadedImages, uploading
         )}
       </div>
 
-      {/* Male patient info */}
+      {/* Patient info — for IUI: left=male, right=female; for sperm prep: always male */}
       <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.65rem 0.85rem', marginBottom: '0.85rem', fontSize: '0.82rem', color: '#374151' }}>
-        <p style={{ margin: '0 0 2px', fontWeight: 600 }}>Male Patient</p>
-        <p style={{ margin: 0, color: '#64748b' }}>{caseData.male_patient.name} · {caseData.male_patient.mpeid}</p>
+        {stageId === 'iui' ? (
+          type === 'collection' ? (
+            <>
+              <p style={{ margin: '0 0 2px', fontWeight: 600 }}>Male Patient</p>
+              <p style={{ margin: 0, color: '#64748b' }}>{caseData.male_patient.name} · {caseData.male_patient.mpeid}</p>
+            </>
+          ) : (
+            <>
+              <p style={{ margin: '0 0 2px', fontWeight: 600 }}>Female Patient</p>
+              <p style={{ margin: 0, color: '#64748b' }}>{caseData.female_patient.name} · {caseData.female_patient.mpeid}</p>
+            </>
+          )
+        ) : (
+          <>
+            <p style={{ margin: '0 0 2px', fontWeight: 600 }}>Male Patient</p>
+            <p style={{ margin: 0, color: '#64748b' }}>{caseData.male_patient.name} · {caseData.male_patient.mpeid}</p>
+          </>
+        )}
       </div>
 
       {uploaded ? (
@@ -103,7 +120,7 @@ function SpermPreparationUpload({ sessionId, caseData, uploadedImages, uploading
       ) : (
         <div>
           <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.6rem' }}>
-            Upload label image for male patient validation
+            Upload label image for {stageId === 'iui' ? (type === 'collection' ? 'male' : 'female') : 'male'} patient validation
           </p>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             {showUpload && (
@@ -138,14 +155,14 @@ function SpermPreparationUpload({ sessionId, caseData, uploadedImages, uploading
       <div style={{ display: 'flex', gap: '1.25rem', marginBottom: '1.5rem' }}>
         <SubSection
           type="collection"
-          label="Collection Container"
+          label={stageId === 'iui' ? 'Male — Sperm Sample' : 'Collection Container'}
           uploaded={collectionUploaded}
           previewUrl={uploadedImages.find(img => img.patientType === 'collection')?.previewUrl}
           validationResult={collectionValidated}
         />
         <SubSection
           type="process"
-          label="Processed Sperm Sample"
+          label={stageId === 'iui' ? 'Female — Sample' : 'Processed Sperm Sample'}
           uploaded={processUploaded}
           previewUrl={uploadedImages.find(img => img.patientType === 'process')?.previewUrl}
           validationResult={processValidated}
@@ -192,6 +209,26 @@ function SpermPreparationUpload({ sessionId, caseData, uploadedImages, uploading
   );
 }
 
+// Small component to load enhanced image with presigned URL
+function EnhancedImagePreview({ imageKey }) {
+  const [url, setUrl] = React.useState(null);
+  React.useEffect(() => {
+    if (!imageKey) return;
+    api.getImageDownloadUrl(imageKey)
+      .then(r => setUrl(r.downloadUrl))
+      .catch(() => {});
+  }, [imageKey]);
+  if (!url) return null;
+  return (
+    <div style={{ margin: '0.75rem 0', padding: '0.75rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
+      <p style={{ margin: '0 0 0.5rem', fontSize: '0.82rem', fontWeight: 600, color: '#374151', display: 'flex', alignItems: 'center', gap: '6px' }}>
+        🔍 Enhanced Image (what the system analyzed)
+      </p>
+      <img src={url} alt="Enhanced" style={{ width: '100%', maxWidth: '400px', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+    </div>
+  );
+}
+
 function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, embedded = false }) {
   const { canUploadImage } = usePermissionStore();
   const showUpload = canUploadImage();
@@ -215,6 +252,10 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
   // Sperm Preparation: track per-subsection validation (collection / process)
   const [spermSubValidations, setSpermSubValidations] = useState({ collection: null, process: null });
   const [spermProcessingType, setSpermProcessingType] = useState(null); // which sub-section is currently processing
+
+  // Crop modal state
+  const [pendingCropFile, setPendingCropFile] = useState(null);
+  const [pendingCropPatientType, setPendingCropPatientType] = useState(null);
 
   // Check if this is the last stage
   const isLastStage = stage.id === STAGES[STAGES.length - 1].id;
@@ -274,7 +315,10 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
         const latestExtraction = sortedExtractions[0];
         
         if (latestExtraction.validation_result) {
-          setValidationResult(latestExtraction.validation_result);
+          setValidationResult({
+            ...latestExtraction.validation_result,
+            enhanced_image_key: latestExtraction.enhanced_image_key || null,
+          });
           setShowPreviousResult(true);
         }
       } else {
@@ -367,7 +411,10 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
         const latestExtraction = sortedExtractions[0];
         
         if (latestExtraction.validation_result) {
-          setValidationResult(latestExtraction.validation_result);
+          setValidationResult({
+            ...latestExtraction.validation_result,
+            enhanced_image_key: latestExtraction.enhanced_image_key || null,
+          });
           setShowPreviousResult(false); // This is current, not previous
         }
       }
@@ -431,7 +478,10 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
         }
         canvas.width = width;
         canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        const ctx = canvas.getContext('2d');
+        // Enhance for low-light: boost brightness and contrast for better OCR
+        ctx.filter = 'brightness(1.6) contrast(1.4)';
+        ctx.drawImage(img, 0, 0, width, height);
         // Always output as JPEG for consistent content type across all devices
         const quality = file.size < 1024 * 1024 ? 0.92 : 0.85;
         canvas.toBlob((blob) => resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', quality);
@@ -447,18 +497,28 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
   const handleImageCapture = async (e, patientType = null) => {
     const rawFile = e.target.files[0];
     if (!rawFile) return;
+    // Show crop modal before uploading
+    setPendingCropFile(rawFile);
+    setPendingCropPatientType(patientType);
+  };
+
+  // After crop → compress and upload
+  const handleCroppedImage = async (croppedFile) => {
+    const patientType = pendingCropPatientType;
+    setPendingCropFile(null);
+    setPendingCropPatientType(null);
 
     setUploading(true);
     setError(null);
 
     try {
-      const file = await compressImage(rawFile);
+      const file = await compressImage(croppedFile);
       // Create preview URL
       const previewUrl = URL.createObjectURL(file);
       
-      // For male sample collection, use specific image numbers for each sub-section
+      // For male sample collection / IUI, use specific image numbers for each sub-section
       let imageNumber = currentImage;
-      if (stage.id === 'male_sample_collection' && patientType) {
+      if ((stage.id === 'male_sample_collection' || stage.id === 'iui') && patientType) {
         imageNumber = patientType === 'collection' ? 1 : 2;
       }
       
@@ -472,8 +532,8 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
       const newUpload = { imageNumber, s3Key, patientType, previewUrl };
       setUploadedImages([...uploadedImages, newUpload]);
       
-      // For male sample collection, trigger validation immediately per sub-section
-      if (stage.id === 'male_sample_collection') {
+      // For male sample collection / IUI, trigger validation immediately per sub-section
+      if (stage.id === 'male_sample_collection' || stage.id === 'iui') {
         setSpermProcessingType(patientType);
         setProcessing(true);
         pollForValidation(patientType);
@@ -530,7 +590,7 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
           // Accept if new extraction with validation, OR only extraction and has validation
           if (latestExtraction.validation_result && (isNew || initialExtractionIds.size === 0)) {
             // Sperm Preparation: track per-subsection validation
-            if (stage.id === 'male_sample_collection' && spermPatientType) {
+            if ((stage.id === 'male_sample_collection' || stage.id === 'iui') && spermPatientType) {
               setSpermSubValidations(prev => {
                 const updated = { ...prev, [spermPatientType]: latestExtraction.validation_result };
                 // If both subsections are now validated, show the combined result
@@ -550,7 +610,10 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
               setProcessing(false);
               setSpermProcessingType(null);
             } else {
-              setValidationResult(latestExtraction.validation_result);
+              setValidationResult({
+                ...latestExtraction.validation_result,
+                enhanced_image_key: latestExtraction.enhanced_image_key || null,
+              });
               setProcessing(false);
             
               if (wasRetry && latestExtraction.validation_result.overall_match) {
@@ -636,19 +699,79 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
           )}
           {isMatch ? 'Validation Successful' : 'Validation Failed'}
         </h3>
+
+        {/* Show enhanced image if available */}
+        {validationResult.enhanced_image_key && (
+          <EnhancedImagePreview imageKey={validationResult.enhanced_image_key} />
+        )}
         
         {isMatch ? (
-          <p>{validationResult.manually_overridden ? 'Validation manually overridden and marked as successful.' : 'All patient data matches the registered information.'}</p>
+          <div>
+            {validationResult.manually_overridden ? (
+              <p>Validation manually overridden and marked as successful.</p>
+            ) : (
+              <>
+                <p style={{ marginBottom: '0.75rem' }}>All patient data matches the registered information.</p>
+                {validationResult.matches && validationResult.matches.length > 0 && (
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '1rem', marginBottom: '0.75rem' }}>
+                    {validationResult.matches.map((m, idx) => (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.5rem 0', borderBottom: idx < validationResult.matches.length - 1 ? '1px solid #dcfce7' : 'none' }}>
+                        <span style={{ color: '#16a34a', fontSize: '1.1rem', flexShrink: 0 }}>✓</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#374151', textTransform: 'capitalize' }}>{m.field.replace('_', ' ')}</div>
+                          <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
+                            Expected: <strong style={{ color: '#16a34a' }}>{m.expected || '—'}</strong> &nbsp;|&nbsp; Found: <strong style={{ color: '#16a34a' }}>{m.found || '—'}</strong>
+                          </div>
+                        </div>
+                        <span style={{ background: '#dcfce7', color: '#16a34a', padding: '2px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 700 }}>Match</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         ) : (
           <div>
-            <p>The following mismatches were detected:</p>
-            <ul>
+            {/* Show matched fields first */}
+            {validationResult.matches && validationResult.matches.length > 0 && (
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '1rem', marginBottom: '0.75rem' }}>
+                {validationResult.matches.map((m, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.4rem 0', borderBottom: idx < validationResult.matches.length - 1 ? '1px solid #dcfce7' : 'none' }}>
+                    <span style={{ color: '#16a34a', fontSize: '1.1rem', flexShrink: 0 }}>✓</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#374151', textTransform: 'capitalize' }}>{m.field.replace('_', ' ')}</div>
+                      <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
+                        Expected: <strong>{m.expected || '—'}</strong> &nbsp;|&nbsp; Found: <strong>{m.found || '—'}</strong>
+                      </div>
+                    </div>
+                    <span style={{ background: '#dcfce7', color: '#16a34a', padding: '2px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 700 }}>Match</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Show mismatched fields with clear reason */}
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', padding: '1rem', marginBottom: '0.75rem' }}>
+              <p style={{ margin: '0 0 0.5rem', fontWeight: 700, fontSize: '0.9rem', color: '#dc2626' }}>⚠ Mismatches Detected:</p>
               {validationResult.mismatches.map((mismatch, idx) => (
-                <li key={idx}>
-                  <strong>{mismatch.field}:</strong> Expected "{mismatch.expected}", Found "{mismatch.found || 'null'}"
-                </li>
+                <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '0.5rem 0', borderBottom: idx < validationResult.mismatches.length - 1 ? '1px solid #fecaca' : 'none' }}>
+                  <span style={{ color: '#dc2626', fontSize: '1.1rem', flexShrink: 0 }}>✗</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#374151', textTransform: 'capitalize' }}>{mismatch.field.replace('_', ' ')}</div>
+                    <div style={{ fontSize: '0.82rem', marginTop: '2px' }}>
+                      <span style={{ color: '#64748b' }}>Expected: </span><strong style={{ color: '#16a34a' }}>{mismatch.expected || '—'}</strong>
+                    </div>
+                    <div style={{ fontSize: '0.82rem' }}>
+                      <span style={{ color: '#64748b' }}>Found: </span><strong style={{ color: '#dc2626' }}>{mismatch.found || 'null'}</strong>
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#92400e', background: '#fffbeb', padding: '4px 8px', borderRadius: '6px', marginTop: '4px', display: 'inline-block' }}>
+                      💡 {mismatch.field.includes('name') ? 'Name on label does not match registered patient name. Check spelling or retake photo with clearer label.' : 'MPID on label does not match registered MPID. Verify the correct dish is being used.'}
+                    </div>
+                  </div>
+                  <span style={{ background: '#fecaca', color: '#dc2626', padding: '2px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 700, flexShrink: 0 }}>Mismatch</span>
+                </div>
               ))}
-            </ul>
+            </div>
           </div>
         )}
 
@@ -735,8 +858,8 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
 
       {!processing && !validationResult && !showPreviousResult && !stuckInProgress && (
         <div className="upload-section">
-          {stage.id === 'male_sample_collection' ? (
-            // Sperm Preparation — 2 sub-sections side by side, male patient only, remark below
+          {(stage.id === 'male_sample_collection' || stage.id === 'iui') ? (
+            // Sperm Preparation / IUI — 2 sub-sections side by side, remark below
             <SpermPreparationUpload
               sessionId={sessionId}
               caseData={caseData}
@@ -746,6 +869,7 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
               onCapture={handleImageCapture}
               onBothUploaded={() => { setProcessing(true); pollForValidation(); }}
               spermSubValidations={spermSubValidations}
+              stageId={stage.id}
             />
           ) : (
             // Standard layout for other stages
@@ -965,6 +1089,15 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
             </div>
           </div>
         </div>
+      )}
+
+      {/* Crop Modal */}
+      {pendingCropFile && (
+        <ImageCropModal
+          imageFile={pendingCropFile}
+          onCrop={handleCroppedImage}
+          onCancel={() => { setPendingCropFile(null); setPendingCropPatientType(null); }}
+        />
       )}
     </div>
   );

@@ -58,13 +58,20 @@ def lambda_handler(event, context):
         stage_type_map = {
             'icsi': 'icsi_documentation',
             'oocyte-impression': 'denudation',
+            'oocyte-morphology': 'denudation',
             'fertilization-check': 'fertilization_check',
             'cleavage': 'cleavage',
             'blastocyst': 'blastocyst',
+            'day6': 'day6',
+            'day7': 'day7',
             'cleavage-transfer': 'cleavage_transfer',
             'blastocyst-transfer': 'blastocyst_transfer',
             'cleavage-sample': 'cleavage_sample',
             'blastocyst-sample': 'blastocyst_sample',
+            'day6-sample': 'day6_sample',
+            'day6-transfer': 'day6_transfer',
+            'day7-sample': 'day7_sample',
+            'day7-transfer': 'day7_transfer',
             'fet': 'fet',
         }
         stage_type = stage_type_map.get(folder_prefix, folder_prefix)

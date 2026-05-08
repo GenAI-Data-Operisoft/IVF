@@ -15,6 +15,7 @@ STAGE_VALIDATION_RULES = {
     'oocyte_collection': ['female_name', 'female_mpeid'],
     'denudation': ['female_name', 'female_mpeid'],
     'male_sample_collection': ['male_name', 'male_mpeid'],
+    'iui': ['male_name', 'male_mpeid'],  # image_1=male, image_2=female (handled dynamically)
     'icsi': ['female_name', 'female_mpeid'],
     'culture': ['female_name', 'female_mpeid'],
     'fertilization_check': ['female_name', 'female_mpeid'],
@@ -49,14 +50,19 @@ def lambda_handler(event, context):
                 
                 # For fertilization_check, the ARN maps to label_validation table
                 # Distinguish by checking the s3_path field
-                if stage == 'label_validation' and 's3_path' in new_image:
+                if 's3_path' in new_image:
                     s3_path = new_image['s3_path']['S']
-                    if 'fertilization-check/' in s3_path:
-                        stage = 'fertilization_check'
-                    elif 'icsi-documentation/' in s3_path:
-                        stage = 'icsi_documentation'
-                    elif 'blastocyst-stage/' in s3_path:
-                        stage = 'blastocyst'
+                    if stage == 'label_validation':
+                        if 'fertilization-check/' in s3_path:
+                            stage = 'fertilization_check'
+                        elif 'icsi-documentation/' in s3_path:
+                            stage = 'icsi_documentation'
+                        elif 'blastocyst-stage/' in s3_path:
+                            stage = 'blastocyst'
+                    elif stage == 'male_sample_collection':
+                        # IUI also uses the same table — distinguish by s3_path prefix
+                        if 'iui/' in s3_path:
+                            stage = 'iui'
                 
                 # Get extracted data
                 extracted_data = parse_dynamodb_map(new_image['extracted_data']['M'])
@@ -67,6 +73,15 @@ def lambda_handler(event, context):
                     # Each image validates male patient details independently
                     # image_number 1 = Collection Container, image_number 2 = Process Sperm Sample
                     pass  # extracted_data already has male_name/male_mpeid from OCR
+                
+                # For IUI: image_1 = male patient, image_2 = female patient
+                iui_fields_override = None
+                if stage == 'iui':
+                    image_number = int(new_image.get('image_number', {}).get('N', '1'))
+                    if image_number == 2:
+                        iui_fields_override = ['female_name', 'female_mpeid']
+                    else:
+                        iui_fields_override = ['male_name', 'male_mpeid']
                 
                 # Get registered case data
                 print(f"Fetching case data for session: {session_id}")
@@ -85,7 +100,7 @@ def lambda_handler(event, context):
                 # Perform validation
                 print(f"Starting validation for stage: {stage}")
                 try:
-                    validation_result = validate_extraction(extracted_data, case, stage)
+                    validation_result = validate_extraction(extracted_data, case, stage, fields_override=iui_fields_override)
                     print(f"Validation result: {validation_result}")
                 except Exception as val_error:
                     print(f"ERROR during validation: {str(val_error)}")
@@ -169,7 +184,7 @@ def lambda_handler(event, context):
         print(f"Error in validation: {str(e)}")
         raise
 
-def validate_extraction(extracted, case, stage):
+def validate_extraction(extracted, case, stage, fields_override=None):
     """
     Compare extracted data with registered case data
     Handles flexible MPEID formats (with or without "ID-" prefix)
@@ -183,7 +198,7 @@ def validate_extraction(extracted, case, stage):
         'mismatches': []
     }
     
-    fields_to_check = STAGE_VALIDATION_RULES.get(stage, [])
+    fields_to_check = fields_override if fields_override else STAGE_VALIDATION_RULES.get(stage, [])
     
     # Check if donor is involved — adjust validation targets
     male_type = case.get('male_patient', {}).get('type', 'self')
@@ -240,6 +255,15 @@ def validate_extraction(extracted, case, stage):
                 'expected': registered_value,
                 'found': extracted_value
             })
+        else:
+            # Also include matched fields so frontend can show them
+            if 'matches' not in validation_result:
+                validation_result['matches'] = []
+            validation_result['matches'].append({
+                'field': field,
+                'expected': registered_value,
+                'found': extracted_value
+            })
     
     return validation_result
 
@@ -265,49 +289,32 @@ def normalize_name(name):
 
 def normalize_mpeid(mpeid):
     """
-    Normalize MPEID to handle different formats and OCR errors:
-    - "ID-35697344" -> "ID-35697344"
-    - "10-35697344" -> "ID-35697344" (OCR mistake: 10 instead of ID)
-    - "35697344" -> "ID-35697344"
-    - "id-35697344" -> "ID-35697344"
-    - "I0-35697344" -> "ID-35697344" (OCR mistake: I0 instead of ID)
-    - "1D-35697344" -> "ID-35697344" (OCR mistake: 1D instead of ID)
+    Normalize MPEID by stripping any prefix and returning only the numeric part.
+    This avoids OCR confusion between "ID-" and "10-".
+    - "ID-35697344" -> "35697344"
+    - "10-35697344" -> "35697344"
+    - "35697344" -> "35697344"
+    - "id-35697344" -> "35697344"
+    - "I0-35697344" -> "35697344"
+    - "1D-35697344" -> "35697344"
     """
     if not mpeid:
         return None
     
     mpeid = str(mpeid).upper().strip()
     
-    # Common OCR mistakes for "ID-"
-    ocr_mistakes = [
-        ('10-', 'ID-'),  # 10 instead of ID
-        ('I0-', 'ID-'),  # I0 instead of ID
-        ('1D-', 'ID-'),  # 1D instead of ID
-        ('1O-', 'ID-'),  # 1O instead of ID
-        ('IO-', 'ID-'),  # IO instead of ID
-        ('lD-', 'ID-'),  # lD instead of ID (lowercase L)
-        ('l0-', 'ID-'),  # l0 instead of ID
-    ]
+    # Common OCR prefixes to strip (ID-, 10-, I0-, 1D-, etc.)
+    prefixes_to_strip = ['ID-', '10-', 'I0-', '1D-', '1O-', 'IO-', 'LD-', 'L0-']
     
-    # Fix common OCR mistakes
-    for mistake, correction in ocr_mistakes:
-        if mpeid.startswith(mistake):
-            mpeid = mpeid.replace(mistake, correction, 1)
+    for prefix in prefixes_to_strip:
+        if mpeid.startswith(prefix):
+            mpeid = mpeid[len(prefix):]
             break
     
-    # If it already has ID- prefix, return as is
-    if mpeid.startswith('ID-'):
-        return mpeid
+    # Strip any remaining non-digit characters
+    digits_only = ''.join(c for c in mpeid if c.isdigit())
     
-    # If it's just numbers, add ID- prefix
-    if mpeid.isdigit():
-        return f'ID-{mpeid}'
-    
-    # If it has other prefix patterns, try to extract the number
-    # Handle cases like "M12345" or "F67890"
-    if len(mpeid) > 0 and mpeid[0].isalpha():
-        # Keep the original format for non-ID prefixes
-        return mpeid
+    return digits_only if digits_only else mpeid
     
     return mpeid
 
@@ -360,6 +367,17 @@ def update_case_validation(session_id, stage, validation_result, token_totals):
     new_total_cost = current_total_cost + stage_cost
     
     # Update case with stage-specific and total token data
+    # First ensure the stage key exists (for optional stages like iui added after case creation)
+    try:
+        cases_table.update_item(
+            Key={'sessionId': session_id},
+            UpdateExpression='SET stages.#stage = if_not_exists(stages.#stage, :empty)',
+            ExpressionAttributeNames={'#stage': stage},
+            ExpressionAttributeValues={':empty': {'status': 'pending', 'images_required': 2, 'images_uploaded': 0}}
+        )
+    except Exception:
+        pass  # Stage already exists, continue
+
     cases_table.update_item(
         Key={'sessionId': session_id},
         UpdateExpression='''SET 

@@ -14,6 +14,7 @@ URL_EXPIRATION = 300  # 5 minutes
 STAGE_FOLDERS = {
     'label_validation': 'label-validation',
     'oocyte_collection': 'oocyte-collection',
+    'iui': 'iui',
     'denudation': 'denudation',
     'male_sample_collection': 'male-sample-collection',
     'icsi': 'icsi',
@@ -76,8 +77,18 @@ def lambda_handler(event, context):
             session_id = body['sessionId']
             image_number = body.get('imageNumber', 1)
             stage_folder = body.get('stageFolder', 'icsi')
+            client_annotated = body.get('clientAnnotated', False)
+            fixed_key = body.get('fixedKey')  # For Excel sheets — use exact S3 key
             timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-            s3_key = f'{stage_folder}-injected-original/{session_id}/image_{image_number}_{timestamp}.jpg'
+            
+            # Fixed key mode (for Excel sheets)
+            if fixed_key:
+                s3_key = fixed_key
+            elif client_annotated:
+                s3_key = f'{stage_folder}-injected-annotated/{session_id}/image_{image_number}_{timestamp}.jpg'
+            else:
+                s3_key = f'{stage_folder}-injected-original/{session_id}/image_{image_number}_{timestamp}.jpg'
+            
             upload_url = s3_client.generate_presigned_url(
                 'put_object',
                 Params={
@@ -87,17 +98,83 @@ def lambda_handler(event, context):
                 },
                 ExpiresIn=600
             )
+            
+            # For client-annotated images, save metadata to DynamoDB immediately
+            response_body = {
+                'uploadUrl': upload_url,
+                's3Key': s3_key,
+                'bucket': BUCKET_NAME
+            }
+            
+            if client_annotated:
+                import uuid
+                stage_type_map = {
+                    'icsi': 'icsi_documentation',
+                    'oocyte-morphology': 'denudation',
+                    'oocyte-impression': 'denudation',
+                    'fertilization-check': 'fertilization_check',
+                    'cleavage': 'cleavage',
+                    'blastocyst': 'blastocyst',
+                    'day6': 'day6',
+                    'day7': 'day7',
+                    'cleavage-transfer': 'cleavage_transfer',
+                    'blastocyst-transfer': 'blastocyst_transfer',
+                    'day6-transfer': 'day6_transfer',
+                    'day7-transfer': 'day7_transfer',
+                    'cleavage-sample': 'cleavage_sample',
+                    'blastocyst-sample': 'blastocyst_sample',
+                    'day6-sample': 'day6_sample',
+                    'day7-sample': 'day7_sample',
+                    'fet': 'fet',
+                }
+                stage_type = stage_type_map.get(stage_folder, stage_folder)
+                
+                # Get case data for patient info
+                case_response = cases_table.get_item(Key={'sessionId': session_id})
+                case = case_response.get('Item', {})
+                
+                image_id = str(uuid.uuid4())
+                images_table = dynamodb.Table(os.environ.get('IMAGES_TABLE', 'IVF-InjectedOocyteImages'))
+                images_table.put_item(Item={
+                    'imageId': image_id,
+                    'sessionId': session_id,
+                    'stage_type': stage_type,
+                    'oocyte_number': image_number,
+                    'original_s3_path': f's3://{BUCKET_NAME}/{s3_key}',
+                    'annotated_s3_path': f's3://{BUCKET_NAME}/{s3_key}',
+                    'male_patient': {
+                        'name': case.get('male_patient', {}).get('name', ''),
+                        'mpeid': case.get('male_patient', {}).get('mpeid', '')
+                    },
+                    'female_patient': {
+                        'name': case.get('female_patient', {}).get('name', ''),
+                        'mpeid': case.get('female_patient', {}).get('mpeid', '')
+                    },
+                    'captured_at': datetime.utcnow().isoformat(),
+                    'annotation_status': 'completed',
+                    'download_count': 0
+                })
+                response_body['imageId'] = image_id
+                
+                if log_audit:
+                    log_audit(
+                        user_info=extract_user_info(body),
+                        action='IMAGE_ANNOTATED',
+                        resource_type='image',
+                        resource_id=image_id,
+                        session_id=session_id,
+                        stage=stage_type,
+                        result='success',
+                        metadata={'message': 'Client-side annotated image uploaded', 'image_number': image_number}
+                    )
+            
             return {
                 'statusCode': 200,
                 'headers': {
                     'Content-Type': 'application/json',
                     'Access-Control-Allow-Origin': '*'
                 },
-                'body': json.dumps({
-                    'uploadUrl': upload_url,
-                    's3Key': s3_key,
-                    'bucket': BUCKET_NAME
-                })
+                'body': json.dumps(response_body)
             }
 
         # Original upload URL generation code
@@ -167,19 +244,39 @@ def lambda_handler(event, context):
             presigned_url = 'https://' + presigned_url
         
         # Update stage status to in_progress and store user who is uploading
+        # Use if_not_exists to handle optional stages (like iui) that may not be in the stages map
         user_info, ip_address = extract_user_info(event)
-        cases_table.update_item(
-            Key={'sessionId': session_id},
-            UpdateExpression='SET stages.#stage.#status = :status, stages.#stage.last_user = :user_info',
-            ExpressionAttributeNames={
-                '#stage': stage,
-                '#status': 'status'
-            },
-            ExpressionAttributeValues={
-                ':status': 'in_progress',
-                ':user_info': user_info
-            }
-        )
+        try:
+            cases_table.update_item(
+                Key={'sessionId': session_id},
+                UpdateExpression='SET stages.#stage.#status = :status, stages.#stage.last_user = :user_info',
+                ExpressionAttributeNames={
+                    '#stage': stage,
+                    '#status': 'status'
+                },
+                ExpressionAttributeValues={
+                    ':status': 'in_progress',
+                    ':user_info': user_info
+                }
+            )
+        except Exception as update_err:
+            # If stage key doesn't exist in the map (e.g. optional stages added after case creation),
+            # initialize it first then update
+            if 'ValidationException' in str(type(update_err)) or 'document path' in str(update_err).lower():
+                cases_table.update_item(
+                    Key={'sessionId': session_id},
+                    UpdateExpression='SET stages.#stage = if_not_exists(stages.#stage, :empty)',
+                    ExpressionAttributeNames={'#stage': stage},
+                    ExpressionAttributeValues={':empty': {'status': 'pending', 'images_required': 2, 'images_uploaded': 0}}
+                )
+                cases_table.update_item(
+                    Key={'sessionId': session_id},
+                    UpdateExpression='SET stages.#stage.#status = :status, stages.#stage.last_user = :user_info',
+                    ExpressionAttributeNames={'#stage': stage, '#status': 'status'},
+                    ExpressionAttributeValues={':status': 'in_progress', ':user_info': user_info}
+                )
+            else:
+                raise
         
         # Log audit entry for upload URL generation
         log_audit(

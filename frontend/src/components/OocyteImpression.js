@@ -9,6 +9,7 @@ import { api } from '../api';
 import { STAGES } from '../config';
 import StageCapture from './StageCapture';
 import usePermissionStore from '../store/permissionStore';
+import ImageCropModal from './ImageCropModal';
 
 const DENUDATION_STAGE = STAGES.find(s => s.id === 'denudation');
 
@@ -45,6 +46,7 @@ function OocyteMorphology({ sessionId, caseData, onComplete, onViewStatus }) {
   const [remarkSaved, setRemarkSaved] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState(null);
+  const [pendingCropFile, setPendingCropFile] = useState(null);
 
   useEffect(() => {
     if (step1Done) loadStep2Data();
@@ -72,7 +74,7 @@ function OocyteMorphology({ sessionId, caseData, onComplete, onViewStatus }) {
     img.onload = () => {
       URL.revokeObjectURL(url);
       const canvas = document.createElement('canvas');
-      const MAX = 1920;
+      const MAX = 1280;
       let { width, height } = img;
       if (width > MAX || height > MAX) {
         if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
@@ -90,18 +92,25 @@ function OocyteMorphology({ sessionId, caseData, onComplete, onViewStatus }) {
     img.src = url;
   });
 
-  // Upload via ICSI doc presigned URL — same S3 path triggers same annotation Lambda
-  const handleImageUpload = async (e) => {
+  // Step 1: User selects file → show crop modal
+  const handleImageCapture = (e) => {
     const rawFile = e.target.files[0];
     if (!rawFile) return;
+    setPendingCropFile(rawFile);
+  };
+
+  // Step 2: After crop → compress and upload
+  const handleCroppedImage = async (croppedFile) => {
+    setPendingCropFile(null);
     setUploading(true);
     setError(null);
     try {
-      const file = await compressImage(rawFile);
+      const file = await compressImage(croppedFile);
       const imageNumber = annotatedImages.length + 1;
-      const { uploadUrl } = await api.getPresignedUrlForAnnotatedImage(sessionId, imageNumber, 'oocyte-morphology');
+      const { uploadUrl } = await api.getPresignedUrlForAnnotatedImage(
+        sessionId, imageNumber, 'oocyte-morphology'
+      );
       await api.uploadImage(uploadUrl, file);
-      // Start polling for annotated result
       setProcessing(true);
       pollForAnnotatedImage(imageNumber);
     } catch (err) {
@@ -113,7 +122,7 @@ function OocyteMorphology({ sessionId, caseData, onComplete, onViewStatus }) {
 
   const pollForAnnotatedImage = async (imageNumber) => {
     let attempts = 0;
-    const maxAttempts = 45;
+    const maxAttempts = 90;
     const poll = async () => {
       try {
         const data = await api.getAnnotatedImages(sessionId, 'denudation');
@@ -292,14 +301,14 @@ function OocyteMorphology({ sessionId, caseData, onComplete, onViewStatus }) {
                 <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                   {showUpload && (
                     <label style={{ cursor: 'pointer' }}>
-                      <input type="file" accept="image/jpeg,image/jpg,image/png" style={{ display: 'none' }} onChange={handleImageUpload} disabled={uploading} />
+                      <input type="file" accept="image/jpeg,image/jpg,image/png" style={{ display: 'none' }} onChange={handleImageCapture} disabled={uploading} />
                       <span className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.55rem 1.1rem', fontSize: '0.88rem' }}>
                         <IconUpload /> {uploading ? 'Uploading...' : 'Upload Image'}
                       </span>
                     </label>
                   )}
                   <label style={{ cursor: 'pointer' }}>
-                    <input type="file" accept="image/jpeg,image/jpg,image/png" capture="environment" style={{ display: 'none' }} onChange={handleImageUpload} disabled={uploading} />
+                    <input type="file" accept="image/jpeg,image/jpg,image/png" capture="environment" style={{ display: 'none' }} onChange={handleImageCapture} disabled={uploading} />
                     <span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.55rem 1.1rem', fontSize: '0.88rem' }}>
                       <IconCamera /> {uploading ? 'Uploading...' : 'Take Photo'}
                     </span>
@@ -317,7 +326,7 @@ function OocyteMorphology({ sessionId, caseData, onComplete, onViewStatus }) {
                 <img src="https://d1nmtja0c4ok3x.cloudfront.net/IVFgif.gif" alt="Processing..." style={{ width: '36px', height: '36px', objectFit: 'contain' }} />
                 <div>
                   <p style={{ margin: 0, fontWeight: 600, fontSize: '0.88rem', color: '#667eea' }}>Annotating image with patient details...</p>
-                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#94a3b8' }}>This takes 10–15 seconds</p>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#94a3b8' }}>This takes a few seconds</p>
                 </div>
               </div>
             )}
@@ -383,6 +392,15 @@ function OocyteMorphology({ sessionId, caseData, onComplete, onViewStatus }) {
           </>
         )}
       </div>
+
+      {/* Crop Modal */}
+      {pendingCropFile && (
+        <ImageCropModal
+          imageFile={pendingCropFile}
+          onCrop={handleCroppedImage}
+          onCancel={() => setPendingCropFile(null)}
+        />
+      )}
     </div>
   );
 }

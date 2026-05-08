@@ -143,7 +143,9 @@ function Metrics({ onBack }) {
             <option value="icsi">ICSI/IVF</option>
             <option value="fertilization_check">Fertilization Check (Day 1)</option>
             <option value="icsi_documentation">Cleavage (Day 3)</option>
-            <option value="blastocyst">Blastocyst (Day 5/6)</option>
+            <option value="blastocyst">Blastocyst (Day 5)</option>
+            <option value="day6">Day 6</option>
+            <option value="day7">Day 7</option>
             <option value="culture">Frozen Embryo Transfer (FET)</option>
           </select>
         </div>
@@ -334,7 +336,9 @@ function formatStage(stage) {
     'icsi': 'ICSI/IVF',
     'fertilization_check': 'Fertilization Check',
     'icsi_documentation': 'Cleavage (Day 3)',
-    'blastocyst': 'Blastocyst (Day 5/6)',
+    'blastocyst': 'Blastocyst (Day 5)',
+    'day6': 'Day 6',
+    'day7': 'Day 7',
     'culture': 'FET',
   };
   return names[stage] || stage.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');

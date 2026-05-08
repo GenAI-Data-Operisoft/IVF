@@ -4,7 +4,7 @@
 import React from 'react';
 import usePermissionStore from '../store/permissionStore';
 
-function Home({ onStartCapture, onViewSessions, onViewMetrics, onViewAuditLog, onViewUserManagement, userRole, user }) {
+function Home({ onStartCapture, onViewSessions, onViewMetrics, onViewAuditLog, onViewUserManagement, onViewExcel, userRole, user }) {
   const { canView, canEdit } = usePermissionStore();
 
   const userCenter = user?.centers?.[0] || '';
@@ -144,6 +144,26 @@ function Home({ onStartCapture, onViewSessions, onViewMetrics, onViewAuditLog, o
               </div>
             </div>
           )}
+
+          <div className="home-card" onClick={onViewExcel}>
+            <div className="home-card-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="#667eea" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="8" y="4" width="48" height="56" rx="4"/>
+                <line x1="20" y1="20" x2="44" y2="20"/>
+                <line x1="20" y1="30" x2="44" y2="30"/>
+                <line x1="20" y1="40" x2="44" y2="40"/>
+                <line x1="20" y1="50" x2="34" y2="50"/>
+                <line x1="32" y1="4" x2="32" y2="60"/>
+              </svg>
+            </div>
+            <h2>Data Sheets</h2>
+            <p>Upload and manage Excel spreadsheets</p>
+            <div className="home-card-features">
+              <span>✓ Upload Excel</span>
+              <span>✓ View & Edit</span>
+              <span>✓ Auto-Save</span>
+            </div>
+          </div>
 
         </div>
 

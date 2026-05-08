@@ -4,7 +4,9 @@
  */
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
+import ImageCropModal from './ImageCropModal';
 import usePermissionStore from '../store/permissionStore';
+
 
 const IconUpload = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -222,6 +224,7 @@ function ICSIDocumentation({ sessionId, caseData, onComplete, onViewStatus }) {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState(null);
   const [annotatedImages, setAnnotatedImages] = useState([]);
+  const [pendingCropFile, setPendingCropFile] = useState(null);
 
   useEffect(() => {
     // Load existing annotated images
@@ -243,7 +246,7 @@ function ICSIDocumentation({ sessionId, caseData, onComplete, onViewStatus }) {
       img.onload = () => {
         URL.revokeObjectURL(url);
         const canvas = document.createElement('canvas');
-        const MAX = 1920;
+        const MAX = 1280;
         let { width, height } = img;
         if (width > MAX || height > MAX) {
           if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
@@ -263,32 +266,32 @@ function ICSIDocumentation({ sessionId, caseData, onComplete, onViewStatus }) {
     });
   };
 
-  const handleImageUpload = async (e) => {
+  const handleImageCapture = (e) => {
     const rawFile = e.target.files[0];
     if (!rawFile) return;
+    setPendingCropFile(rawFile);
+  };
 
+  const handleCroppedImage = async (croppedFile) => {
+    setPendingCropFile(null);
     setUploading(true);
     setError(null);
 
     try {
-      const file = await compressImage(rawFile);
+      const file = await compressImage(croppedFile);
       const imageNumber = uploadedImages.length + annotatedImages.length + 1;
-      
-      // Get presigned URL for original image upload
-      const { uploadUrl, s3Key } = await api.getPresignedUrlForICSIDoc(
-        sessionId,
-        imageNumber
+
+      // Get presigned URL for annotated image (saves metadata in Lambda)
+      const { uploadUrl } = await api.getPresignedUrlForAnnotatedImage(
+        sessionId, imageNumber, 'icsi'
       );
-      
-      // Upload image to S3
+
+      // Upload the compressed image
       await api.uploadImage(uploadUrl, file);
-      
-      setUploadedImages([...uploadedImages, { imageNumber, s3Key, status: 'uploaded' }]);
-      
-      // Start polling for annotated image
+
+      // Start polling for server-side annotation
       setProcessing(true);
       pollForAnnotatedImage(imageNumber);
-      
     } catch (err) {
       setError(err.message);
     } finally {
@@ -298,45 +301,33 @@ function ICSIDocumentation({ sessionId, caseData, onComplete, onViewStatus }) {
 
   const pollForAnnotatedImage = async (imageNumber) => {
     let attempts = 0;
-    const maxAttempts = 45;
-
+    const maxAttempts = 90;
     const poll = async () => {
       try {
-        const data = await api.getAnnotatedImages(sessionId);
-        
-        // Check if new image is annotated
+        const data = await api.getAnnotatedImages(sessionId, 'icsi_documentation');
         const newImage = data.images.find(img => img.oocyte_number === imageNumber);
-        
         if (newImage && newImage.annotation_status === 'completed') {
           setAnnotatedImages(data.images);
-          setProcessing(false);
           setUploadedImages([]);
-          
+          setProcessing(false);
+
           // Auto-complete the stage when first image is successfully annotated
-          if (data.images.length === 1) {
+          if ((data.images || []).length === 1) {
             try {
               await api.completeStage(sessionId, 'icsi_documentation');
             } catch (err) {
               // Don't show error to user - they can still manually complete
             }
           }
-          
           return;
         }
-
         attempts++;
-        if (attempts < maxAttempts) {
-          setTimeout(poll, 2000);
-        } else {
-          setError('Annotation timeout. Please refresh to check status.');
-          setProcessing(false);
-        }
+        if (attempts < maxAttempts) setTimeout(poll, 2000);
+        else { setError('Annotation timeout. Please refresh.'); setProcessing(false); }
       } catch (err) {
-        setError(err.message);
-        setProcessing(false);
+        setError(err.message); setProcessing(false);
       }
     };
-
     poll();
   };
 
@@ -417,7 +408,7 @@ function ICSIDocumentation({ sessionId, caseData, onComplete, onViewStatus }) {
                 <input
                   type="file"
                   accept="image/jpeg,image/jpg,image/png"
-                  onChange={handleImageUpload}
+                  onChange={handleImageCapture}
                   disabled={uploading}
                 />
                 <span className="btn-primary">
@@ -430,7 +421,7 @@ function ICSIDocumentation({ sessionId, caseData, onComplete, onViewStatus }) {
                 type="file"
                 accept="image/jpeg,image/jpg,image/png"
                 capture="environment"
-                onChange={handleImageUpload}
+                onChange={handleImageCapture}
                 disabled={uploading}
               />
               <span className="btn-secondary">
@@ -448,7 +439,7 @@ function ICSIDocumentation({ sessionId, caseData, onComplete, onViewStatus }) {
         <div className="processing-message">
           <img src="https://d1nmtja0c4ok3x.cloudfront.net/IVFgif.gif" alt="Processing..." style={{ width: '80px', height: '80px', objectFit: 'contain' }} />
           <p>Annotating image with patient information...</p>
-          <p className="small">This may take 10-15 seconds</p>
+          <p className="small">This takes a few seconds</p>
         </div>
       )}
 
@@ -514,6 +505,14 @@ function ICSIDocumentation({ sessionId, caseData, onComplete, onViewStatus }) {
           View All Stages
         </button>
       </div>
+
+      {pendingCropFile && (
+        <ImageCropModal
+          imageFile={pendingCropFile}
+          onCrop={handleCroppedImage}
+          onCancel={() => setPendingCropFile(null)}
+        />
+      )}
     </div>
   );
 }

@@ -114,6 +114,8 @@ def lambda_handler(event, context):
                 'fertilization_check':   {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
                 'icsi_documentation':    {'status': 'pending', 'images_required': 0, 'images_uploaded': 0},
                 'blastocyst':            {'status': 'pending', 'images_required': 0, 'images_uploaded': 0},
+                'day6':                  {'status': 'pending', 'images_required': 0, 'images_uploaded': 0},
+                'day7':                  {'status': 'pending', 'images_required': 0, 'images_uploaded': 0},
                 'culture':               {'status': 'pending', 'images_required': 1, 'images_uploaded': 0}
             },
             # Token usage fields are initialized to zero and updated after each AI call.

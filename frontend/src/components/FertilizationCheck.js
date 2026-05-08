@@ -8,7 +8,9 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import { STAGES } from '../config';
 import StageCapture from './StageCapture';
+import ImageCropModal from './ImageCropModal';
 import usePermissionStore from '../store/permissionStore';
+
 
 // Use label_validation stage config for female sample validation
 const FERT_STAGE = { id: 'fertilization_check', name: 'Fertilization Check (Day 1)', images: 1 };
@@ -42,6 +44,7 @@ function FertilizationCheck({ sessionId, caseData, onComplete, onViewStatus }) {
   const [remarkSaved, setRemarkSaved] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState(null);
+  const [pendingCropFile, setPendingCropFile] = useState(null);
 
   useEffect(() => { loadData(); }, [sessionId]); // eslint-disable-line
 
@@ -60,7 +63,7 @@ function FertilizationCheck({ sessionId, caseData, onComplete, onViewStatus }) {
     const img = new Image(); const url = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(url);
-      const canvas = document.createElement('canvas'); const MAX = 1920;
+      const canvas = document.createElement('canvas'); const MAX = 1280;
       let { width, height } = img;
       if (width > MAX || height > MAX) { if (width > height) { height = Math.round(height * MAX / width); width = MAX; } else { width = Math.round(width * MAX / height); height = MAX; } }
       canvas.width = width; canvas.height = height;
@@ -71,26 +74,44 @@ function FertilizationCheck({ sessionId, caseData, onComplete, onViewStatus }) {
     img.src = url;
   });
 
-  const handleImageUpload = async (e) => {
+  const handleImageCapture = (e) => {
     const rawFile = e.target.files[0]; if (!rawFile) return;
+    setPendingCropFile(rawFile);
+  };
+
+  const handleCroppedImage = async (croppedFile) => {
+    setPendingCropFile(null);
     setUploading(true); setError(null);
     try {
-      const file = await compressImage(rawFile);
+      const file = await compressImage(croppedFile);
       const imageNumber = annotatedImages.length + 1;
       const { uploadUrl } = await api.getPresignedUrlForAnnotatedImage(sessionId, imageNumber, 'fertilization-check');
       await api.uploadImage(uploadUrl, file);
       setProcessing(true);
-      let attempts = 0;
-      const poll = async () => {
-        try {
-          const data = await api.getAnnotatedImages(sessionId, 'fertilization_check');
-          const newImg = data.images.find(img => img.oocyte_number === imageNumber);
-          if (newImg && newImg.annotation_status === 'completed') { setAnnotatedImages(data.images); setProcessing(false); return; }
-          attempts++; if (attempts < 45) setTimeout(poll, 2000); else { setError('Annotation timeout.'); setProcessing(false); }
-        } catch (err) { setError(err.message); setProcessing(false); }
-      };
-      poll();
+      pollForAnnotatedImage(imageNumber);
     } catch (err) { setError(err.message); } finally { setUploading(false); }
+  };
+
+  const pollForAnnotatedImage = async (imageNumber) => {
+    let attempts = 0;
+    const maxAttempts = 90;
+    const poll = async () => {
+      try {
+        const data = await api.getAnnotatedImages(sessionId, 'fertilization_check');
+        const newImage = data.images.find(img => img.oocyte_number === imageNumber);
+        if (newImage && newImage.annotation_status === 'completed') {
+          setAnnotatedImages(data.images);
+          setProcessing(false);
+          return;
+        }
+        attempts++;
+        if (attempts < maxAttempts) setTimeout(poll, 2000);
+        else { setError('Annotation timeout. Please refresh.'); setProcessing(false); }
+      } catch (err) {
+        setError(err.message); setProcessing(false);
+      }
+    };
+    poll();
   };
 
   const handleSaveRemark = async () => {
@@ -157,8 +178,8 @@ function FertilizationCheck({ sessionId, caseData, onComplete, onViewStatus }) {
         </div>
         {!processing && (
           <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
-            {showUpload && (<label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} disabled={uploading} /><span className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1rem', fontSize: '0.85rem' }}><IconUpload />{uploading ? 'Uploading...' : 'Upload Image'}</span></label>)}
-            <label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleImageUpload} disabled={uploading} /><span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1rem', fontSize: '0.85rem' }}><IconCamera />{uploading ? '...' : 'Take Photo'}</span></label>
+            {showUpload && (<label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageCapture} disabled={uploading} /><span className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1rem', fontSize: '0.85rem' }}><IconUpload />{uploading ? 'Uploading...' : 'Upload Image'}</span></label>)}
+            <label style={{ cursor: 'pointer' }}><input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleImageCapture} disabled={uploading} /><span className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1rem', fontSize: '0.85rem' }}><IconCamera />{uploading ? '...' : 'Take Photo'}</span></label>
           </div>
         )}
         {processing && (<div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.85rem', background: '#f0f4ff', borderRadius: '8px', marginBottom: '0.75rem' }}><img src="https://d1nmtja0c4ok3x.cloudfront.net/IVFgif.gif" alt="" style={{ width: '30px', height: '30px' }} /><span style={{ fontSize: '0.85rem', color: '#667eea', fontWeight: 600 }}>Annotating image...</span></div>)}
@@ -194,6 +215,14 @@ function FertilizationCheck({ sessionId, caseData, onComplete, onViewStatus }) {
         </button>
         <button onClick={onViewStatus} className="btn-secondary">View All Stages</button>
       </div>
+
+      {pendingCropFile && (
+        <ImageCropModal
+          imageFile={pendingCropFile}
+          onCrop={handleCroppedImage}
+          onCancel={() => setPendingCropFile(null)}
+        />
+      )}
     </div>
   );
 }
