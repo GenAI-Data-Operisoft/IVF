@@ -1,3 +1,8 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
 """
 Override Validation — allows user to manually override a failed OCR validation.
 Marks the stage as completed with override metadata for audit trail.
@@ -6,7 +11,7 @@ import json
 import boto3
 import os
 from datetime import datetime
-from audit_helper import log_audit, ACTIONS
+from audit_helper import log_audit, ACTIONS, now_ist_iso, now_ist_date, now_ist_timestamp
 
 dynamodb = boto3.resource('dynamodb')
 cases_table = dynamodb.Table(os.environ.get('CASES_TABLE', 'IVF-Cases'))
@@ -34,7 +39,7 @@ def lambda_handler(event, context):
         user_email = body.get('userEmail', 'unknown')
         user_name = body.get('userName', 'unknown')
 
-        now = datetime.utcnow().isoformat()
+        now = now_ist_iso()
 
         override_record = {
             'overridden_at': now,

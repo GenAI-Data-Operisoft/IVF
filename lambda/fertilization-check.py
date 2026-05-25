@@ -1,3 +1,8 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
 import json, boto3, os
 from datetime import datetime
 try:
@@ -19,7 +24,7 @@ def lambda_handler(event, context):
             return {"statusCode":200,"headers":CORS,"body":json.dumps({"remark":d.get("remark",""),"annotated_images":d.get("annotated_images",[])})}
         elif method == "POST":
             body = json.loads(event.get("body") or "{}")
-            cases_table.update_item(Key={"sessionId":session_id},UpdateExpression="SET fertilization_check = :d",ExpressionAttributeValues={":d":{"remark":body.get("remark",""),"updated_at":datetime.utcnow().isoformat()}})
+            cases_table.update_item(Key={"sessionId":session_id},UpdateExpression="SET fertilization_check = :d",ExpressionAttributeValues={":d":{"remark":body.get("remark",""),"updated_at":now_ist_iso()}})
             return {"statusCode":200,"headers":CORS,"body":json.dumps({"message":"Saved"})}
         return {"statusCode":405,"headers":CORS,"body":json.dumps({"error":"Method not allowed"})}
     except Exception as e:

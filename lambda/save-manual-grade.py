@@ -1,3 +1,8 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
 """
 save-manual-grade.py
 
@@ -12,7 +17,7 @@ import json
 import boto3
 import os
 from datetime import datetime
-from audit_helper import log_audit, extract_user_info
+from audit_helper import log_audit, extract_user_info, now_ist_iso, now_ist_date, now_ist_timestamp
 
 dynamodb = boto3.resource('dynamodb')
 images_table = dynamodb.Table(os.environ.get('IMAGES_TABLE', 'IVF-InjectedOocyteImages'))
@@ -55,7 +60,7 @@ def lambda_handler(event, context):
             'quality': quality,
             'notes': notes,
             'graded_by': graded_by,
-            'graded_at': datetime.utcnow().isoformat() + 'Z'
+            'graded_at': now_ist_iso() + 'Z'
         }
 
         images_table.update_item(

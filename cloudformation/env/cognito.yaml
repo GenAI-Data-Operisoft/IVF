@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IVF DEV Environment - Cognito User Pool'
+
+Parameters:
+  Env:
+    Type: String
+    Default: Dev
+    Description: Environment name for resource naming
+  UserPoolName:
+    Type: String
+    Default: IVF-Dev-Users
+    Description: Name of the Cognito User Pool
+  ClientName:
+    Type: String
+    Default: IVF-Dev-WebApp
+    Description: Name of the Cognito User Pool Client
+
+Resources:
+  # ========================================
+  # Cognito User Pool
+  # ========================================
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Ref UserPoolName
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: false
+        - Name: name
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: role
+          AttributeDataType: String
+          Mutable: true
+        - Name: department
+          AttributeDataType: String
+          Mutable: true
+        - Name: employeeId
+          AttributeDataType: String
+          Mutable: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      UserPoolAddOns:
+        AdvancedSecurityMode: AUDIT
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate:
+          - email
+      UserPoolTags:
+        Application: IVF-Witness-Capture
+        Environment: Development
+
+  # ========================================
+  # User Pool Client (for React app)
+  # ========================================
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Ref ClientName
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+      PreventUserExistenceErrors: ENABLED
+      RefreshTokenValidity: 30
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      TokenValidityUnits:
+        RefreshToken: days
+        AccessToken: minutes
+        IdToken: minutes
+      ReadAttributes:
+        - email
+        - name
+        - custom:role
+        - custom:department
+        - custom:employeeId
+
+  # ========================================
+  # User Groups
+  # ========================================
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Admins
+      Description: System administrators with full access
+      UserPoolId: !Ref UserPool
+      Precedence: 1
+
+  NurseGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Nurses
+      Description: Nurses and technicians for daily operations
+      UserPoolId: !Ref UserPool
+      Precedence: 2
+
+  SupervisorGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Supervisors
+      Description: Supervisors for oversight and quality control
+      UserPoolId: !Ref UserPool
+      Precedence: 3
+
+  ViewerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Viewers
+      Description: Read-only access for observers
+      UserPoolId: !Ref UserPool
+      Precedence: 4
+
+Outputs:
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolArn:
+    Value: !GetAtt UserPool.Arn
+  UserPoolClientId:
+    Value: !Ref UserPoolClient

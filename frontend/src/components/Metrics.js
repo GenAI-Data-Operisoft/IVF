@@ -87,7 +87,7 @@ function Metrics({ onBack }) {
     );
   }
 
-  const { overview, byStage, byReason, byResolution, failures } = metricsData;
+  const { overview, byStage, byReason, byResolution, failures, aiGrading } = metricsData;
 
   return (
     <div className="metrics-container">
@@ -128,6 +128,12 @@ function Metrics({ onBack }) {
           <div className="metric-value">{overview.failureRate}%</div>
           <div className="metric-label">Failure Rate</div>
         </div>
+        {aiGrading && (
+          <div className="metric-card" style={{ borderTop: '3px solid #7030A0' }}>
+            <div className="metric-value" style={{ color: '#7030A0' }}>{aiGrading.success}/{aiGrading.total}</div>
+            <div className="metric-label">AI Gradings (Success/Total)</div>
+          </div>
+        )}
       </div>
 
       {/* Filters */}
@@ -146,6 +152,7 @@ function Metrics({ onBack }) {
             <option value="blastocyst">Blastocyst (Day 5)</option>
             <option value="day6">Day 6</option>
             <option value="day7">Day 7</option>
+            <option value="iui">IUI</option>
             <option value="culture">Frozen Embryo Transfer (FET)</option>
           </select>
         </div>
@@ -339,6 +346,7 @@ function formatStage(stage) {
     'blastocyst': 'Blastocyst (Day 5)',
     'day6': 'Day 6',
     'day7': 'Day 7',
+    'iui': 'IUI',
     'culture': 'FET',
   };
   return names[stage] || stage.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');

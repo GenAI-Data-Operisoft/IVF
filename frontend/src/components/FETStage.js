@@ -57,8 +57,24 @@ function FETStage({ sessionId, caseData, onComplete, onViewStatus }) {
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState(null);
 
+  // Cryopreservation state - multiple locations
+  const emptyLoc = { cryolockId: "", cryolockColor: "", tank: "", canister: "", goblet: "", visoColor: "" };
+  const [cryoForm, setCryoForm] = useState(emptyLoc);
+  const [cryoLocations, setCryoLocations] = useState([]);
+  const [savingCryo, setSavingCryo] = useState(false);
+  const [cryoSaved, setCryoSaved] = useState(false);
+  // Remaining straws/embryos
+  const [remaining, setRemaining] = useState({ straws: "", embryos: "" });
+  const [savingRemaining, setSavingRemaining] = useState(false);
+  const [remainingSaved, setRemainingSaved] = useState(false);
+
   useEffect(() => {
-    api.getEmbryoStageData(sessionId, "fet").then(d => { setRemark(d.remark || ""); setExistingRemark(d.remark || ""); }).catch(() => {});
+    api.getEmbryoStageData(sessionId, "fet").then(d => {
+      setRemark(d.remark || "");
+      setExistingRemark(d.remark || "");
+      if (d.cryoLocations) setCryoLocations(d.cryoLocations);
+      if (d.remaining) setRemaining(d.remaining);
+    }).catch(() => {});
     api.getAnnotatedImages(sessionId, "fet").then(d => setAnnotatedImages(d.images || [])).catch(() => {});
   }, [sessionId]);
 
@@ -103,10 +119,35 @@ function FETStage({ sessionId, caseData, onComplete, onViewStatus }) {
     catch { setError("Failed to save remark."); } finally { setSavingRemark(false); }
   };
 
+  const handleSaveCryo = async () => {
+    setSavingCryo(true);
+    try {
+      const updated = [...cryoLocations, cryoForm];
+      await api.saveEmbryoStageData(sessionId, "fet", { cryoLocations: updated });
+      setCryoLocations(updated);
+      setCryoForm(emptyLoc);
+      setCryoSaved(true); setTimeout(() => setCryoSaved(false), 3000);
+    } catch { setError("Failed to save location."); } finally { setSavingCryo(false); }
+  };
+
+  const handleRemoveLocation = async (idx) => {
+    const updated = cryoLocations.filter((_, i) => i !== idx);
+    setCryoLocations(updated);
+    await api.saveEmbryoStageData(sessionId, "fet", { cryoLocations: updated }).catch(() => {});
+  };
+
+  const handleSaveRemaining = async () => {
+    setSavingRemaining(true);
+    try {
+      await api.saveEmbryoStageData(sessionId, "fet", { remaining });
+      setRemainingSaved(true); setTimeout(() => setRemainingSaved(false), 3000);
+    } catch { setError("Failed to save remaining data."); } finally { setSavingRemaining(false); }
+  };
+
   const handleComplete = async () => {
     setCompleting(true);
     try {
-      await api.saveEmbryoStageData(sessionId, "fet", { remark });
+      await api.saveEmbryoStageData(sessionId, "fet", { remark, cryoLocations, remaining });
       await api.completeStage(sessionId, "culture");
       onComplete();
     } catch { setError("Failed to complete."); } finally { setCompleting(false); }
@@ -123,7 +164,7 @@ function FETStage({ sessionId, caseData, onComplete, onViewStatus }) {
           </button>
           <div>
             <h2 style={{ margin: 0, fontSize: "1.5rem", fontWeight: 700, color: "#1a202c" }}>Frozen Embryo Transfer (FET)</h2>
-            <p style={{ margin: 0, fontSize: "0.82rem", color: "#64748b" }}>Validate sample, capture annotated microscopic image</p>
+            <p style={{ margin: 0, fontSize: "0.82rem", color: "#64748b" }}>Cryostraw validation · Thawed embryo images annotated with patient name and MPID</p>
           </div>
         </div>
         <button onClick={onViewStatus} className="btn-secondary" style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
@@ -189,6 +230,100 @@ function FETStage({ sessionId, caseData, onComplete, onViewStatus }) {
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginTop: "0.5rem" }}>
           <button type="button" onClick={handleSaveRemark} disabled={savingRemark || remark === existingRemark} className="btn-secondary" style={{ fontSize: "0.85rem", opacity: remark === existingRemark ? 0.5 : 1 }}>{savingRemark ? "Saving..." : "Save Remark"}</button>
           {remarkSaved && <span style={{ fontSize: "0.8rem", color: "#16a34a" }}>✓ Saved</span>}
+        </div>
+      </div>
+
+      {/* Sub 3: Cryopreservation */}
+      <div style={card}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "1rem" }}>
+          <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "linear-gradient(135deg,#667eea,#764ba2)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 700, fontSize: "0.88rem", flexShrink: 0 }}>3</div>
+          <div>
+            <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 700, color: "#1a202c" }}>Cryopreservation</h3>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748b" }}>Record embryo storage location in nitrogen tank system.</p>
+          </div>
+        </div>
+
+        <p style={{ fontSize: "0.82rem", color: "#374151", marginBottom: "0.75rem" }}>Record where the embryo is stored in the nitrogen tank system.</p>
+
+        {/* Location Form */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "0.75rem", marginBottom: "0.75rem" }}>
+          {[
+            { label: "Cryolock ID", key: "cryolockId", placeholder: "e.g. CL-001", type: "text" },
+            { label: "Cryolock Color", key: "cryolockColor", type: "select", options: ["Pink", "Blue", "Green", "Yellow", "Red", "White", "Orange", "Purple"] },
+            { label: "Tank *", key: "tank", type: "select", options: ["Tank 1", "Tank 2", "Tank 3", "Tank 4", "Tank 5"] },
+            { label: "Canister *", key: "canister", placeholder: "e.g. A, G...", type: "text" },
+            { label: "Goblet *", key: "goblet", type: "select", options: ["1", "2", "3", "4", "5", "6"] },
+            { label: "Viso Color *", key: "visoColor", type: "select", options: ["Pink", "Blue", "Green", "Yellow", "Red", "White", "Orange", "Purple"] },
+          ].map(({ label, key, placeholder, type, options }) => (
+            <div key={key}>
+              <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, color: "#374151", marginBottom: "0.25rem" }}>{label}</label>
+              {type === "select" ? (
+                <select value={cryoForm[key]} onChange={e => setCryoForm(p => ({ ...p, [key]: e.target.value }))}
+                  style={{ width: "100%", padding: "0.5rem 0.65rem", border: "1.5px solid #e2e8f0", borderRadius: "8px", fontSize: "0.82rem", outline: "none", background: "#fff" }}>
+                  <option value="">Select...</option>
+                  {options.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : (
+                <input type="text" placeholder={placeholder} value={cryoForm[key]} onChange={e => setCryoForm(p => ({ ...p, [key]: e.target.value }))}
+                  style={{ width: "100%", padding: "0.5rem 0.65rem", border: "1.5px solid #e2e8f0", borderRadius: "8px", fontSize: "0.82rem", outline: "none", boxSizing: "border-box" }} />
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.25rem" }}>
+          <button type="button" onClick={handleSaveCryo} disabled={savingCryo} className="btn-primary" style={{ fontSize: "0.85rem", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            {savingCryo ? "Saving..." : "+ Save Location"}
+          </button>
+          {cryoSaved && <span style={{ fontSize: "0.8rem", color: "#16a34a" }}>✓ Saved</span>}
+        </div>
+
+        {/* Saved Locations List */}
+        {cryoLocations.length > 0 && (
+          <div style={{ marginBottom: "1.25rem" }}>
+            <p style={{ fontSize: "0.82rem", fontWeight: 600, color: "#374151", marginBottom: "0.5rem" }}>Stored Locations ({cryoLocations.length})</p>
+            {cryoLocations.map((loc, idx) => (
+              <div key={idx} style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", padding: "0.5rem 0.75rem", background: "#f8fafc", border: "1.5px solid #e2e8f0", borderRadius: "8px", marginBottom: "0.4rem", fontSize: "0.8rem" }}>
+                {loc.tank && <span style={{ background: "#667eea", color: "#fff", borderRadius: "4px", padding: "2px 8px", fontWeight: 600 }}>{loc.tank}</span>}
+                {loc.canister && <><span style={{ color: "#94a3b8" }}>→</span><span>Canister {loc.canister}</span></>}
+                {loc.goblet && <><span style={{ color: "#94a3b8" }}>→</span><span>Goblet {loc.goblet}</span></>}
+                {loc.cryolockColor && <><span style={{ color: "#94a3b8" }}>→</span><span style={{ background: "#667eea", color: "#fff", borderRadius: "4px", padding: "2px 8px" }}>{loc.cryolockColor}</span></>}
+                {loc.cryolockId && <><span style={{ color: "#94a3b8" }}>→</span><span>🔒 {loc.cryolockId}</span></>}
+                {loc.visoColor && <><span style={{ color: "#94a3b8" }}>→</span><span style={{ background: "#e0e7ff", color: "#3730a3", borderRadius: "4px", padding: "2px 8px" }}>CL: {loc.visoColor}</span></>}
+                <button onClick={() => handleRemoveLocation(idx)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#ef4444", fontSize: "0.75rem", padding: "0 4px" }}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Remaining Straws & Embryos */}
+        <div style={{ borderTop: "1.5px solid #e2e8f0", paddingTop: "1rem" }}>
+          <p style={{ fontSize: "0.82rem", fontWeight: 600, color: "#374151", marginBottom: "0.75rem" }}>Remaining Stock</p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "0.75rem" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, color: "#374151", marginBottom: "0.25rem" }}>Remaining Straws</label>
+              <input type="number" min="0" placeholder="e.g. 3" value={remaining.straws} onChange={e => setRemaining(p => ({ ...p, straws: e.target.value }))}
+                style={{ width: "100%", padding: "0.5rem 0.65rem", border: "1.5px solid #e2e8f0", borderRadius: "8px", fontSize: "0.85rem", outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, color: "#374151", marginBottom: "0.25rem" }}>Remaining Embryos</label>
+              <input type="number" min="0" placeholder="e.g. 2" value={remaining.embryos} onChange={e => setRemaining(p => ({ ...p, embryos: e.target.value }))}
+                style={{ width: "100%", padding: "0.5rem 0.65rem", border: "1.5px solid #e2e8f0", borderRadius: "8px", fontSize: "0.85rem", outline: "none", boxSizing: "border-box" }} />
+            </div>
+          </div>
+          {(remaining.straws || remaining.embryos) && (
+            <div style={{ display: "flex", gap: "1rem", padding: "0.5rem 0.75rem", background: "#f0fdf4", border: "1.5px solid #bbf7d0", borderRadius: "8px", marginBottom: "0.75rem", fontSize: "0.82rem" }}>
+              {remaining.straws && <span>🧊 <strong>{remaining.straws}</strong> straw(s) remaining</span>}
+              {remaining.embryos && <span>🔬 <strong>{remaining.embryos}</strong> embryo(s) remaining</span>}
+            </div>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <button type="button" onClick={handleSaveRemaining} disabled={savingRemaining} className="btn-secondary" style={{ fontSize: "0.85rem" }}>
+              {savingRemaining ? "Saving..." : "Save Remaining"}
+            </button>
+            {remainingSaved && <span style={{ fontSize: "0.8rem", color: "#16a34a" }}>✓ Saved</span>}
+          </div>
         </div>
       </div>
 

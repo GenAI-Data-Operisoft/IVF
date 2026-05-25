@@ -4,7 +4,7 @@
 import React from 'react';
 import usePermissionStore from '../store/permissionStore';
 
-function Home({ onStartCapture, onViewSessions, onViewMetrics, onViewAuditLog, onViewUserManagement, onViewExcel, userRole, user }) {
+function Home({ onStartCapture, onViewSessions, onViewMetrics, onViewAuditLog, onViewUserManagement, onViewExcel, onViewSocialFreezing, userRole, user }) {
   const { canView, canEdit } = usePermissionStore();
 
   const userCenter = user?.centers?.[0] || '';
@@ -162,6 +162,26 @@ function Home({ onStartCapture, onViewSessions, onViewMetrics, onViewAuditLog, o
               <span>✓ Upload Excel</span>
               <span>✓ View & Edit</span>
               <span>✓ Auto-Save</span>
+            </div>
+          </div>
+
+          <div className="home-card" onClick={onViewSocialFreezing}>
+            <div className="home-card-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="#667eea" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="32" cy="32" r="22"/>
+                <line x1="32" y1="10" x2="32" y2="54"/>
+                <line x1="10" y1="32" x2="54" y2="32"/>
+                <line x1="17" y1="17" x2="47" y2="47"/>
+                <line x1="47" y1="17" x2="17" y2="47"/>
+                <circle cx="32" cy="32" r="5" fill="#667eea" stroke="none"/>
+              </svg>
+            </div>
+            <h2>Social Embryo Freezing</h2>
+            <p>Cryopreservation cases for future embryo transfer</p>
+            <div className="home-card-features">
+              <span>✓ Patient Verification</span>
+              <span>✓ Cryopreservation</span>
+              <span>✓ Case Tracking</span>
             </div>
           </div>
 

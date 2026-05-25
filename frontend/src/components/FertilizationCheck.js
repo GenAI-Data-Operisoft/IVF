@@ -146,7 +146,7 @@ function FertilizationCheck({ sessionId, caseData, onComplete, onViewStatus }) {
           </button>
           <div>
             <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#1a202c' }}>Fertilization Check (Day 1)</h2>
-            <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>Validate female sample and capture microscopic image</p>
+            <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>Dish validation · Fertilized oocyte annotated with patient name and MPID</p>
           </div>
         </div>
         <button onClick={onViewStatus} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>

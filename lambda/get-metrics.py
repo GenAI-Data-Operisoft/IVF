@@ -9,12 +9,18 @@ failures_table = dynamodb.Table(os.environ.get('FAILURES_TABLE', 'IVF-Validation
 cases_table = dynamodb.Table(os.environ.get('CASES_TABLE', 'IVF-Cases'))
 
 STAGE_NAMES = {
-    'label_validation': 'Label Validation',
+    'label_validation': 'Patient Verification',
     'oocyte_collection': 'Oocyte Collection',
-    'denudation': 'Denudation',
-    'male_sample_collection': 'Male Sample Collection',
-    'icsi': 'ICSI',
-    'culture': 'Culture'
+    'denudation': 'Oocyte Morphology',
+    'male_sample_collection': 'Sperm Preparation',
+    'iui': 'IUI',
+    'icsi': 'ICSI/IVF',
+    'fertilization_check': 'Fertilization Check (Day 1)',
+    'icsi_documentation': 'Cleavage (Day 3)',
+    'blastocyst': 'Blastocyst (Day 5)',
+    'day6': 'Day 6',
+    'day7': 'Day 7',
+    'culture': 'Frozen Embryo Transfer (FET)',
 }
 
 def lambda_handler(event, context):
@@ -90,9 +96,9 @@ def apply_filters(failures, stage_filter, status_filter, date_range):
     
     # Date range filter
     if date_range != 'all':
-        days = int(date_range)
+        days = float(date_range)
         cutoff_date = datetime.utcnow() - timedelta(days=days)
-        filtered = [f for f in filtered if datetime.fromisoformat(f.get('failed_at', '').replace('Z', '+00:00')) > cutoff_date]
+        filtered = [f for f in filtered if datetime.fromisoformat(f.get('failed_at', '1970-01-01').replace('Z', '+00:00').replace('+00:00', '')) > cutoff_date]
     
     return filtered
 
@@ -104,9 +110,14 @@ def calculate_metrics(filtered_failures, all_failures):
     active = len([f for f in filtered_failures if f.get('status') == 'active'])
     resolved = len([f for f in filtered_failures if f.get('status') == 'resolved'])
     
-    # Calculate failure rate (failures / total validations)
-    # For now, use a simple estimate
-    failure_rate = round((total / max(total * 10, 1)) * 100, 1) if total > 0 else 0
+    # Calculate real failure rate: unique sessions with failures / total sessions
+    try:
+        cases_resp = cases_table.scan(Select='COUNT')
+        total_cases = cases_resp.get('Count', 1)
+        failed_sessions = len(set(f.get('session_id', '') for f in filtered_failures))
+        failure_rate = round((failed_sessions / max(total_cases, 1)) * 100, 1)
+    except Exception:
+        failure_rate = round((total / max(total + 100, 1)) * 100, 1)
     
     overview = {
         'total': total,
@@ -161,10 +172,31 @@ def calculate_metrics(filtered_failures, all_failures):
         reverse=True
     )[:50]
     
+    # AI Grading stats from audit log
+    ai_grading_success = 0
+    ai_grading_failed = 0
+    try:
+        audit_table = dynamodb.Table(os.environ.get('AUDIT_TABLE', 'IVF-AuditLog'))
+        ai_resp = audit_table.scan(
+            FilterExpression='#action IN (:pass, :fail)',
+            ExpressionAttributeNames={'#action': 'action'},
+            ExpressionAttributeValues={':pass': 'AI_GRADING_COMPLETED', ':fail': 'AI_GRADING_FAILED'}
+        )
+        ai_logs = ai_resp.get('Items', [])
+        ai_grading_success = sum(1 for l in ai_logs if l.get('action') == 'AI_GRADING_COMPLETED')
+        ai_grading_failed = sum(1 for l in ai_logs if l.get('action') == 'AI_GRADING_FAILED')
+    except Exception as e:
+        print(f"Could not fetch AI grading stats: {e}")
+
     return {
         'overview': overview,
         'byStage': by_stage_list,
         'byReason': by_reason_list,
         'byResolution': by_resolution_list,
-        'failures': failures_list
+        'failures': failures_list,
+        'aiGrading': {
+            'success': ai_grading_success,
+            'failed': ai_grading_failed,
+            'total': ai_grading_success + ai_grading_failed,
+        }
     }

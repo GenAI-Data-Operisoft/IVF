@@ -268,7 +268,7 @@ function ICSIStage({ sessionId, caseData, onComplete, onViewStatus }) {
           </button>
           <div>
             <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#1a202c' }}>ICSI/IVF</h2>
-            <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>Select procedure type, validate label, and capture microscopic image</p>
+            <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>Dish validation · ICSI images annotated with patient name and MPID</p>
           </div>
         </div>
         <button onClick={onViewStatus} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -348,12 +348,12 @@ function ICSIStage({ sessionId, caseData, onComplete, onViewStatus }) {
             {/* Patient info */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem 1rem' }}>
-                <p style={{ margin: '0 0 4px', fontWeight: 700, fontSize: '0.82rem', color: '#374151' }}>Male Patient</p>
-                <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>{caseData.male_patient.name} · {caseData.male_patient.mpeid}</p>
+                <p style={{ margin: '0 0 4px', fontWeight: 700, fontSize: '0.82rem', color: '#374151' }}>{caseData.male_patient.type === 'donor' ? 'Male Donor' : 'Male Patient'}</p>
+                <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>{caseData.male_patient.type === 'donor' ? `Donor ID: ${caseData.male_patient.donor_id}` : `${caseData.male_patient.name} · ${caseData.male_patient.mpeid}`}</p>
               </div>
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem 1rem' }}>
-                <p style={{ margin: '0 0 4px', fontWeight: 700, fontSize: '0.82rem', color: '#374151' }}>Female Patient</p>
-                <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>{caseData.female_patient.name} · {caseData.female_patient.mpeid}</p>
+                <p style={{ margin: '0 0 4px', fontWeight: 700, fontSize: '0.82rem', color: '#374151' }}>{caseData.female_patient.type === 'donor' ? 'Female Donor' : 'Female Patient'}</p>
+                <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>{caseData.female_patient.type === 'donor' ? `${caseData.female_patient.donor_name} · ${caseData.female_patient.donor_mpeid}` : `${caseData.female_patient.name} · ${caseData.female_patient.mpeid}`}</p>
               </div>
             </div>
 

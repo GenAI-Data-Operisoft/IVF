@@ -1,3 +1,8 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
 import json, boto3, os
 from datetime import datetime
 try:
@@ -24,7 +29,7 @@ def lambda_handler(event, context):
             body = json.loads(event.get("body") or "{}")
             resp = cases_table.get_item(Key={"sessionId":session_id})
             existing = resp.get("Item",{}).get(attr,{})
-            merged = {**existing, **body, "updated_at":datetime.utcnow().isoformat()}
+            merged = {**existing, **body, "updated_at":now_ist_iso()}
             cases_table.update_item(Key={"sessionId":session_id},UpdateExpression=f"SET {attr} = :d",ExpressionAttributeValues={":d":merged})
             return {"statusCode":200,"headers":CORS,"body":json.dumps({"message":"Saved"})}
         return {"statusCode":405,"headers":CORS,"body":json.dumps({"error":"Method not allowed"})}

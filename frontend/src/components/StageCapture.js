@@ -89,19 +89,20 @@ function SpermPreparationUpload({ sessionId, caseData, uploadedImages, uploading
         {stageId === 'iui' ? (
           type === 'collection' ? (
             <>
-              <p style={{ margin: '0 0 2px', fontWeight: 600 }}>Male Patient</p>
-              <p style={{ margin: 0, color: '#64748b' }}>{caseData.male_patient.name} · {caseData.male_patient.mpeid}</p>
+              <p style={{ margin: '0 0 2px', fontWeight: 600 }}>{caseData.male_patient.type === 'donor' ? 'Male Donor' : 'Male Patient'}</p>
+              <p style={{ margin: 0, color: '#64748b' }}>{caseData.male_patient.type === 'donor' ? `Donor ID: ${caseData.male_patient.donor_id}` : `${caseData.male_patient.name} · ${caseData.male_patient.mpeid}`}</p>
             </>
           ) : (
             <>
-              <p style={{ margin: '0 0 2px', fontWeight: 600 }}>Female Patient</p>
-              <p style={{ margin: 0, color: '#64748b' }}>{caseData.female_patient.name} · {caseData.female_patient.mpeid}</p>
+              <p style={{ margin: '0 0 2px', fontWeight: 600 }}>{caseData.female_patient.type === 'donor' ? 'Female Donor' : 'Female Patient'}</p>
+              <p style={{ margin: 0, color: '#64748b' }}>{caseData.female_patient.type === 'donor' ? `${caseData.female_patient.donor_name} · ${caseData.female_patient.donor_mpeid}` : `${caseData.female_patient.name} · ${caseData.female_patient.mpeid}`}</p>
+              {caseData.female_patient.phone_number && <p style={{ margin: '2px 0 0', color: '#64748b', fontSize: '0.8rem' }}>📞 {caseData.female_patient.phone_number}</p>}
             </>
           )
         ) : (
           <>
-            <p style={{ margin: '0 0 2px', fontWeight: 600 }}>Male Patient</p>
-            <p style={{ margin: 0, color: '#64748b' }}>{caseData.male_patient.name} · {caseData.male_patient.mpeid}</p>
+            <p style={{ margin: '0 0 2px', fontWeight: 600 }}>{caseData.male_patient.type === 'donor' ? 'Male Donor' : 'Male Patient'}</p>
+            <p style={{ margin: 0, color: '#64748b' }}>{caseData.male_patient.type === 'donor' ? `Donor ID: ${caseData.male_patient.donor_id}` : `${caseData.male_patient.name} · ${caseData.male_patient.mpeid}`}</p>
           </>
         )}
       </div>
@@ -304,21 +305,27 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
         
         // Sort extractions by validated_at timestamp (most recent validation first)
         const sortedExtractions = data.extractions.sort((a, b) => {
-          // Use validated_at if available (this is when validation completed)
-          // Otherwise fall back to extracted_at (when OCR completed)
           const timeA = new Date(a.validated_at || a.extracted_at || 0);
           const timeB = new Date(b.validated_at || b.extracted_at || 0);
-          return timeB - timeA; // Descending order (newest first)
+          return timeB - timeA;
         });
         
-        // Get the LATEST extraction (first in descending sorted array)
         const latestExtraction = sortedExtractions[0];
         
+        // Check if stage was manually overridden from caseData
+        const stageOverridden = caseData?.stages?.[stage.id]?.validation_result === 'override';
+        
         if (latestExtraction.validation_result) {
-          setValidationResult({
+          const result = {
             ...latestExtraction.validation_result,
             enhanced_image_key: latestExtraction.enhanced_image_key || null,
-          });
+          };
+          // If overridden, force show as successful
+          if (stageOverridden) {
+            result.overall_match = true;
+            result.manually_overridden = true;
+          }
+          setValidationResult(result);
           setShowPreviousResult(true);
         }
       } else {
@@ -839,7 +846,10 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
             </svg>
             Back
           </button>
-          <h2 style={{ margin: 0 }}>{stage.name}</h2>
+          <div>
+            <h2 style={{ margin: 0 }}>{stage.name}</h2>
+            {stage.subtitle && <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#64748b', fontWeight: 500 }}>{stage.subtitle}</p>}
+          </div>
         </div>
         <button onClick={onViewStatus} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
@@ -881,11 +891,24 @@ function StageCapture({ sessionId, caseData, stage, onComplete, onViewStatus, em
                   <h4>Male Patient</h4>
                   <p><strong>Name:</strong> {caseData.male_patient.name} {caseData.male_patient.last_name || ""}</p>
                   <p><strong>MPID:</strong> {caseData.male_patient.mpeid}</p>
+                  {caseData.male_patient.type === 'donor' && (
+                    <p style={{ marginTop: '4px', padding: '3px 6px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '4px', fontSize: '0.78rem', color: '#92400e' }}>
+                      <strong>Donor ID:</strong> {caseData.male_patient.donor_id}
+                    </p>
+                  )}
                 </div>
                 <div className="patient-card">
                   <h4>Female Patient</h4>
                   <p><strong>Name:</strong> {caseData.female_patient.name} {caseData.female_patient.last_name || ""}</p>
                   <p><strong>MPID:</strong> {caseData.female_patient.mpeid}</p>
+                  {caseData.female_patient.phone_number && (
+                    <p><strong>Phone:</strong> {caseData.female_patient.phone_number}</p>
+                  )}
+                  {caseData.female_patient.type === 'donor' && (
+                    <div style={{ marginTop: '4px', padding: '3px 6px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '4px', fontSize: '0.78rem', color: '#92400e' }}>
+                      <p style={{ margin: 0 }}><strong>Donor:</strong> {caseData.female_patient.donor_name} · {caseData.female_patient.donor_mpeid}</p>
+                    </div>
+                  )}
                 </div>
               </div>
 

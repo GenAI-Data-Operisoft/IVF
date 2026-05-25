@@ -70,12 +70,15 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
   const [maleType, setMaleType] = useState('self'); // 'self' | 'donor'
   const [femaleType, setFemaleType] = useState('self'); // 'self' | 'donor'
 
+  const [phoneError, setPhoneError] = useState('');
+
   const [formData, setFormData] = useState({
     maleName: '',
     maleMpeid: '',
     maleDonorId: '',
     femaleName: '',
     femaleMpeid: '',
+    femalePhone: '',
     femaleDonorName: '',
     femaleDonorMpeid: '',
     femaleDonorId: '',
@@ -134,8 +137,26 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
     const setScanning = isMale ? setScanningMale : setScanningFemale;
     const setPreview = isMale ? setMaleScanPreview : setFemaleScanPreview;
     const setVerification = isMale ? setMaleVerification : setFemaleVerification;
-    const typedName = isMale ? formData.maleName : formData.femaleName;
-    const typedMpeid = isMale ? formData.maleMpeid : formData.femaleMpeid;
+    
+    // Use donor fields when donor is selected
+    let typedName, typedMpeid;
+    if (isMale) {
+      if (maleType === 'donor') {
+        typedName = formData.maleDonorId || 'DONOR';
+        typedMpeid = formData.maleDonorId;
+      } else {
+        typedName = formData.maleName;
+        typedMpeid = formData.maleMpeid;
+      }
+    } else {
+      if (femaleType === 'donor') {
+        typedName = formData.femaleDonorName;
+        typedMpeid = formData.femaleDonorMpeid;
+      } else {
+        typedName = formData.femaleName;
+        typedMpeid = formData.femaleMpeid;
+      }
+    }
 
     setPreview(URL.createObjectURL(file));
     setScanning(true);
@@ -170,8 +191,18 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
     }
   };
 
+  const validatePhone = (phone) => {
+    if (!phone) return true; // optional
+    return /^[6-9]\d{9}$/.test(phone.trim());
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (formData.femalePhone && !validatePhone(formData.femalePhone)) {
+      setPhoneError('Enter a valid 10-digit mobile number');
+      return;
+    }
+    setPhoneError('');
     setLoading(true);
     setError(null);
     try {
@@ -199,6 +230,7 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
         female_patient: {
           name: normalizeName(formData.femaleName),
           mpeid: normalizeMpeid(formData.femaleMpeid),
+          phone_number: formData.femalePhone.trim() || '',
           type: femaleType,
           donor_name: femaleType === 'donor' ? normalizeName(formData.femaleDonorName) : '',
           donor_mpeid: femaleType === 'donor' ? normalizeMpeid(formData.femaleDonorMpeid) : '',
@@ -486,6 +518,22 @@ function RegistrationForm({ onComplete, onViewSessions, onBack, user }) {
                 onBlur={() => setFormData(p => ({ ...p, femaleMpeid: normalizeMpeid(p.femaleMpeid) }))}
                 required />
               <small style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px', display: 'block' }}>Enter number only (ID- prefix will be removed automatically)</small>
+            </div>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Phone Number <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 400 }}>(optional)</span></label>
+              <input
+                style={{ ...inputStyle, borderColor: phoneError ? '#e11d48' : inputStyle.borderColor }}
+                type="tel"
+                placeholder="e.g. 9876543210"
+                maxLength={10}
+                value={formData.femalePhone}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '');
+                  setFormData({ ...formData, femalePhone: val });
+                  setPhoneError('');
+                }}
+              />
+              {phoneError && <small style={{ fontSize: '0.78rem', color: '#e11d48', marginTop: '4px', display: 'block' }}>{phoneError}</small>}
             </div>
 
             {femaleType === 'self' && (

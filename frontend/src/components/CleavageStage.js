@@ -221,7 +221,13 @@ function ManualGradingSection({ image, sessionId }) {
 
 
 const VISO_COLORS = ['Red', 'Blue', 'Green', 'Yellow', 'Pink', 'White', 'Orange', 'Purple'];
-const CAN_OPTIONS = ['1', 'D', '2'];
+const CAN_OPTIONS = [
+  { value: '1', label: 'Tank 1' },
+  { value: 'D', label: 'Tank D' },
+  { value: '2', label: 'Tank 2' },
+  { value: 'J1', label: 'Jumbo 1 (J1)' },
+  { value: 'J2', label: 'Jumbo 2 (J2)' },
+];
 
 function compressImg(file) {
   return new Promise((resolve) => {
@@ -257,9 +263,10 @@ function SectionHeader({ num, title, subtitle, badge }) {
 
 // Sample Validation + Annotated Details (two-column, reusable for Day 3, Day 5/6, FET)
 function SampleValidationWithAnnotation({ sessionId, caseData, showUpload, stageKey, onViewStatus }) {
-  // Each stage uses its own stage ID so extractions don't overlap between Day 3, Day 5/6, FET
-  const STAGE_OBJ = { id: stageKey === 'blastocyst' ? 'blastocyst' : 'icsi_documentation', name: 'Sample Validation', images: 1 };
-  const stageStatus = caseData?.stages?.[stageKey === 'blastocyst' ? 'blastocyst' : 'icsi_documentation']?.status;
+  // Each stage uses its own stage ID so extractions don't overlap between Day 3, Day 5/6/7, FET
+  const stageIdForValidation = stageKey === 'cleavage' ? 'icsi_documentation' : stageKey;
+  const STAGE_OBJ = { id: stageIdForValidation, name: 'Sample Validation', images: 1 };
+  const stageStatus = caseData?.stages?.[stageIdForValidation]?.status;
   const [validated, setValidated] = React.useState(stageStatus === 'completed' || stageStatus === 'failed');
   const [annotUploading, setAnnotUploading] = React.useState(false);
   const [annotProcessing, setAnnotProcessing] = React.useState(false);
@@ -379,7 +386,7 @@ function EmbryoTransferSection({ sessionId, caseData, showUpload, stageKey }) {
 
   React.useEffect(() => {
     if (allPassed) {
-      const st = stageKey === 'blastocyst' ? 'blastocyst_transfer' : 'cleavage_transfer';
+      const st = stageKey === 'cleavage' ? 'cleavage_transfer' : stageKey + '_transfer';
       api.getAnnotatedImages(sessionId, st).then(d => setAnnotatedImages(d.images || [])).catch(() => {});
     }
   }, [allPassed, sessionId, stageKey]);
@@ -437,7 +444,7 @@ function EmbryoTransferSection({ sessionId, caseData, showUpload, stageKey }) {
     try {
       const file = await compressImg(croppedFile);
       const num = annotatedImages.length + 1;
-      const folder = stageKey === 'blastocyst' ? 'blastocyst-transfer' : 'cleavage-transfer';
+      const folder = stageKey === 'cleavage' ? 'cleavage-transfer' : stageKey + '-transfer';
       const { uploadUrl } = await api.getPresignedUrlForAnnotatedImage(sessionId, num, folder);
       await api.uploadImage(uploadUrl, file);
       setAnnotProcessing(true);
@@ -446,7 +453,7 @@ function EmbryoTransferSection({ sessionId, caseData, showUpload, stageKey }) {
       const maxAttempts = 90;
       const poll = async () => {
         try {
-          const st = stageKey === 'blastocyst' ? 'blastocyst_transfer' : 'cleavage_transfer';
+          const st = stageKey === 'cleavage' ? 'cleavage_transfer' : stageKey + '_transfer';
           const data = await api.getAnnotatedImages(sessionId, st);
           const newImage = data.images.find(img => img.oocyte_number === num);
           if (newImage && newImage.annotation_status === 'completed') {
@@ -585,7 +592,7 @@ function CryopreservationSection({ sessionId, stageKey }) {
 
   return (
     <div>
-      <p style={{ fontSize: '0.82rem', color: '#64748b', marginBottom: '1rem' }}>Record where the embryo is stored in the nitrogen can system.</p>
+      <p style={{ fontSize: '0.82rem', color: '#64748b', marginBottom: '1rem' }}>Record where the embryo is stored in the nitrogen tank system.</p>
       {error && <div style={{ background: '#ffebee', color: '#c62828', padding: '0.6rem 0.85rem', borderRadius: '8px', marginBottom: '0.75rem', fontSize: '0.82rem' }}>{error}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
         <div>
@@ -600,10 +607,10 @@ function CryopreservationSection({ sessionId, stageKey }) {
           </select>
         </div>
         <div>
-          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: '0.3rem' }}>Can *</label>
+          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: '0.3rem' }}>Tank *</label>
           <select style={inp} value={form.can} onChange={e => setForm(f => ({ ...f, can: e.target.value }))}>
             <option value="">Select...</option>
-            {CAN_OPTIONS.map(c => <option key={c} value={c}>Can {c}</option>)}
+            {CAN_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             <option value="custom">Other</option>
           </select>
           {form.can === 'custom' && <input style={{ ...inp, marginTop: '0.4rem' }} type="text" placeholder="Type can name" value={customCan} onChange={e => setCustomCan(e.target.value)} />}
@@ -777,7 +784,13 @@ function CleavageStage({ sessionId, caseData, onComplete, onViewStatus, stageTit
           </button>
           <div>
             <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#1a202c' }}>{stageTitle}</h2>
-            <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>Embryo imaging, transfer documentation, and cryopreservation</p>
+            <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>{
+              stageKey === 'cleavage' ? 'Dish validation · Day 3 embryo images annotated with patient name and MPID' :
+              stageKey === 'blastocyst' ? 'Dish validation · Blastocyst images annotated with patient name and MPID' :
+              stageKey === 'day6' ? 'Dish validation · Blastocyst images annotated with patient name and MPID' :
+              stageKey === 'day7' ? 'Dish validation · Blastocyst images annotated with patient name and MPID' :
+              'Dish validation · Embryo images annotated with patient name and MPID'
+            }</p>
           </div>
         </div>
         <button onClick={onViewStatus} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -860,7 +873,7 @@ function CleavageStage({ sessionId, caseData, onComplete, onViewStatus, stageTit
 
       {/* Sub 3: Cryopreservation */}
       <div style={card}>
-        <SectionHeader num="4" title="Cryopreservation" subtitle="Record embryo storage location in nitrogen can system" />
+        <SectionHeader num="4" title="Cryopreservation" subtitle="Record embryo storage location in nitrogen tank system" />
         <CryopreservationSection sessionId={sessionId} stageKey={stageKey} />
       </div>
 

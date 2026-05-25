@@ -1,0 +1,208 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IVF DEV Environment - Parent Nested Stack (ivf-dev)'
+
+Parameters:
+  Env:
+    Type: String
+    Default: Dev
+    Description: Environment name prefix for all resources
+  TemplatesBucketName:
+    Type: String
+    Description: S3 bucket where child CloudFormation templates are stored
+  TemplatesPrefix:
+    Type: String
+    Default: cloudformation/env
+    Description: S3 key prefix for child templates
+
+Resources:
+  # ========================================
+  # DynamoDB Tables (10 tables)
+  # ========================================
+  DynamoDBStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${TemplatesBucketName}.s3.${AWS::Region}.amazonaws.com/${TemplatesPrefix}/dynamodb.yaml'
+      Parameters:
+        Env: !Ref Env
+      Tags:
+        - Key: Application
+          Value: IVF-Witness-Capture
+        - Key: Environment
+          Value: Development
+        - Key: Component
+          Value: Database
+
+  # ========================================
+  # S3 Artifacts Bucket
+  # ========================================
+  S3ArtifactsStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${TemplatesBucketName}.s3.${AWS::Region}.amazonaws.com/${TemplatesPrefix}/s3-artifacts.yaml'
+      Parameters:
+        Env: !Ref Env
+        BucketPrefix: c9-ivf-dev-artifacts
+      Tags:
+        - Key: Application
+          Value: IVF-Witness-Capture
+        - Key: Environment
+          Value: Development
+        - Key: Component
+          Value: Storage
+
+  # ========================================
+  # Cognito User Pool
+  # ========================================
+  CognitoStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${TemplatesBucketName}.s3.${AWS::Region}.amazonaws.com/${TemplatesPrefix}/cognito.yaml'
+      Parameters:
+        Env: !Ref Env
+        UserPoolName: !Sub 'IVF-${Env}-Users'
+        ClientName: !Sub 'IVF-${Env}-WebApp'
+      Tags:
+        - Key: Application
+          Value: IVF-Witness-Capture
+        - Key: Environment
+          Value: Development
+        - Key: Component
+          Value: Authentication
+
+  # ========================================
+  # Lambda Functions + IAM Role + EventBridge + Stream Mappings
+  # ========================================
+  LambdaStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - DynamoDBStack
+      - S3ArtifactsStack
+    Properties:
+      TemplateURL: !Sub 'https://${TemplatesBucketName}.s3.${AWS::Region}.amazonaws.com/${TemplatesPrefix}/lambda.yaml'
+      Parameters:
+        Env: !Ref Env
+        CasesTableName: !GetAtt DynamoDBStack.Outputs.CasesTableName
+        CasesTableArn: !GetAtt DynamoDBStack.Outputs.CasesTableArn
+        LabelValidationTableName: !GetAtt DynamoDBStack.Outputs.LabelValidationTableName
+        LabelValidationTableArn: !GetAtt DynamoDBStack.Outputs.LabelValidationTableArn
+        LabelValidationStreamArn: !GetAtt DynamoDBStack.Outputs.LabelValidationStreamArn
+        MaleSampleCollectionTableName: !GetAtt DynamoDBStack.Outputs.MaleSampleCollectionTableName
+        MaleSampleCollectionTableArn: !GetAtt DynamoDBStack.Outputs.MaleSampleCollectionTableArn
+        MaleSampleCollectionStreamArn: !GetAtt DynamoDBStack.Outputs.MaleSampleCollectionStreamArn
+        OocyteCollectionTableName: !GetAtt DynamoDBStack.Outputs.OocyteCollectionTableName
+        OocyteCollectionTableArn: !GetAtt DynamoDBStack.Outputs.OocyteCollectionTableArn
+        OocyteCollectionStreamArn: !GetAtt DynamoDBStack.Outputs.OocyteCollectionStreamArn
+        DenudationTableName: !GetAtt DynamoDBStack.Outputs.DenudationTableName
+        DenudationTableArn: !GetAtt DynamoDBStack.Outputs.DenudationTableArn
+        DenudationStreamArn: !GetAtt DynamoDBStack.Outputs.DenudationStreamArn
+        ICSITableName: !GetAtt DynamoDBStack.Outputs.ICSITableName
+        ICSITableArn: !GetAtt DynamoDBStack.Outputs.ICSITableArn
+        ICSIStreamArn: !GetAtt DynamoDBStack.Outputs.ICSIStreamArn
+        CultureTableName: !GetAtt DynamoDBStack.Outputs.CultureTableName
+        CultureTableArn: !GetAtt DynamoDBStack.Outputs.CultureTableArn
+        CultureStreamArn: !GetAtt DynamoDBStack.Outputs.CultureStreamArn
+        AuditLogTableName: !GetAtt DynamoDBStack.Outputs.AuditLogTableName
+        AuditLogTableArn: !GetAtt DynamoDBStack.Outputs.AuditLogTableArn
+        ValidationFailuresTableName: !GetAtt DynamoDBStack.Outputs.ValidationFailuresTableName
+        ValidationFailuresTableArn: !GetAtt DynamoDBStack.Outputs.ValidationFailuresTableArn
+        InjectedOocyteImagesTableArn: !GetAtt DynamoDBStack.Outputs.InjectedOocyteImagesTableArn
+        BucketName: !GetAtt S3ArtifactsStack.Outputs.BucketName
+        BucketArn: !GetAtt S3ArtifactsStack.Outputs.BucketArn
+      Tags:
+        - Key: Application
+          Value: IVF-Witness-Capture
+        - Key: Environment
+          Value: Development
+        - Key: Component
+          Value: Compute
+
+  # ========================================
+  # API Gateway + Inline Lambda Functions
+  # ========================================
+  ApiGatewayStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - LambdaStack
+      - DynamoDBStack
+    Properties:
+      TemplateURL: !Sub 'https://${TemplatesBucketName}.s3.${AWS::Region}.amazonaws.com/${TemplatesPrefix}/api-gateway.yaml'
+      Parameters:
+        Env: !Ref Env
+        ApiName: !Sub 'IVF-${Env}-API'
+        LambdaRoleArn: !GetAtt LambdaStack.Outputs.LambdaExecutionRoleArn
+        RegistrationHandlerArn: !GetAtt LambdaStack.Outputs.RegistrationHandlerArn
+        PresignedUrlGeneratorArn: !GetAtt LambdaStack.Outputs.PresignedUrlGeneratorArn
+        ListSessionsArn: !GetAtt LambdaStack.Outputs.ListSessionsArn
+        CasesTableName: !GetAtt DynamoDBStack.Outputs.CasesTableName
+        LabelValidationTableName: !GetAtt DynamoDBStack.Outputs.LabelValidationTableName
+        MaleSampleCollectionTableName: !GetAtt DynamoDBStack.Outputs.MaleSampleCollectionTableName
+        OocyteCollectionTableName: !GetAtt DynamoDBStack.Outputs.OocyteCollectionTableName
+        DenudationTableName: !GetAtt DynamoDBStack.Outputs.DenudationTableName
+        ICSITableName: !GetAtt DynamoDBStack.Outputs.ICSITableName
+        CultureTableName: !GetAtt DynamoDBStack.Outputs.CultureTableName
+        ValidationFailuresTableName: !GetAtt DynamoDBStack.Outputs.ValidationFailuresTableName
+      Tags:
+        - Key: Application
+          Value: IVF-Witness-Capture
+        - Key: Environment
+          Value: Development
+        - Key: Component
+          Value: API
+
+  # ========================================
+  # Frontend (S3 + CloudFront)
+  # ========================================
+  FrontendStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${TemplatesBucketName}.s3.${AWS::Region}.amazonaws.com/${TemplatesPrefix}/frontend.yaml'
+      Parameters:
+        Env: !Ref Env
+        FrontendBucketPrefix: ivf-dev-frontend
+      Tags:
+        - Key: Application
+          Value: IVF-Witness-Capture
+        - Key: Environment
+          Value: Development
+        - Key: Component
+          Value: Frontend
+
+Outputs:
+  # DynamoDB
+  CasesTableName:
+    Description: DEV Cases table name
+    Value: !GetAtt DynamoDBStack.Outputs.CasesTableName
+  
+  # S3
+  ArtifactsBucketName:
+    Description: DEV S3 artifacts bucket name
+    Value: !GetAtt S3ArtifactsStack.Outputs.BucketName
+
+  # Cognito
+  UserPoolId:
+    Description: DEV Cognito User Pool ID
+    Value: !GetAtt CognitoStack.Outputs.UserPoolId
+  UserPoolClientId:
+    Description: DEV Cognito User Pool Client ID
+    Value: !GetAtt CognitoStack.Outputs.UserPoolClientId
+
+  # API Gateway
+  ApiEndpoint:
+    Description: DEV API Gateway endpoint URL
+    Value: !GetAtt ApiGatewayStack.Outputs.ApiEndpoint
+
+  # Frontend
+  CloudFrontURL:
+    Description: DEV CloudFront distribution URL
+    Value: !GetAtt FrontendStack.Outputs.CloudFrontURL
+  FrontendBucketName:
+    Description: DEV Frontend S3 bucket name
+    Value: !GetAtt FrontendStack.Outputs.FrontendBucketName
+  CloudFrontDistributionId:
+    Description: DEV CloudFront distribution ID
+    Value: !GetAtt FrontendStack.Outputs.CloudFrontDistributionId
+
+  # Lambda
+  LambdaRoleArn:
+    Description: DEV Lambda execution role ARN
+    Value: !GetAtt LambdaStack.Outputs.LambdaExecutionRoleArn

@@ -1,9 +1,14 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
 import json
 import boto3
 from datetime import datetime
 import os
 import uuid
-from audit_helper import log_audit, ACTIONS
+from audit_helper import log_audit, ACTIONS, now_ist_iso, now_ist_date, now_ist_timestamp
 
 dynamodb = boto3.resource('dynamodb')
 
@@ -21,6 +26,8 @@ STAGE_VALIDATION_RULES = {
     'fertilization_check': ['female_name', 'female_mpeid'],
     'icsi_documentation': ['female_name', 'female_mpeid'],
     'blastocyst': ['female_name', 'female_mpeid'],
+    'day6': ['female_name', 'female_mpeid'],
+    'day7': ['female_name', 'female_mpeid'],
 }
 
 def lambda_handler(event, context):
@@ -59,6 +66,10 @@ def lambda_handler(event, context):
                             stage = 'icsi_documentation'
                         elif 'blastocyst-stage/' in s3_path:
                             stage = 'blastocyst'
+                        elif 'day6/' in s3_path:
+                            stage = 'day6'
+                        elif 'day7/' in s3_path:
+                            stage = 'day7'
                     elif stage == 'male_sample_collection':
                         # IUI also uses the same table — distinguish by s3_path prefix
                         if 'iui/' in s3_path:
@@ -153,7 +164,8 @@ def lambda_handler(event, context):
                         metadata={
                             'message': 'Validation passed - All details match' if validation_result['overall_match'] 
                                       else f"Validation failed - {len(validation_result.get('mismatches', []))} mismatch(es) found",
-                            'mismatches': validation_result.get('mismatches', []) if not validation_result['overall_match'] else None
+                            'mismatches': validation_result.get('mismatches', []) if not validation_result['overall_match'] else None,
+                            'center': case.get('center', '')
                         }
                     )
                     
@@ -204,21 +216,29 @@ def validate_extraction(extracted, case, stage, fields_override=None):
     male_type = case.get('male_patient', {}).get('type', 'self')
     female_type = case.get('female_patient', {}).get('type', 'self')
     
+    # Stages where donor details are on the dish (early stages before fertilization)
+    DONOR_STAGES = ['label_validation', 'oocyte_collection', 'denudation', 'male_sample_collection', 'iui', 'icsi']
+    # Stages where real patient details are on the dish (post-ICSI)
+    REAL_PATIENT_STAGES = ['fertilization_check', 'icsi_documentation', 'blastocyst', 'day6', 'day7', 'culture']
+    
+    # Determine if this stage should validate against donor or real patient
+    is_donor_stage = stage in DONOR_STAGES
+    
     for field in fields_to_check:
         patient_type, field_name = field.split('_', 1)
         
         extracted_value = extracted.get(field)
         
-        # Determine registered value based on donor status
-        if patient_type == 'male' and male_type == 'donor':
-            # Male donor: petri dish has donor_id, validate against that
+        # Determine registered value based on donor status AND stage
+        if patient_type == 'male' and male_type == 'donor' and is_donor_stage:
+            # Male donor on early stages: tube has only Donor ID
             if field_name == 'mpeid':
                 registered_value = case['male_patient'].get('donor_id', '')
             else:
-                # Skip name validation for male donor (no name on petri dish)
+                # Skip name validation for male donor (only Donor ID on tube)
                 continue
-        elif patient_type == 'female' and female_type == 'donor':
-            # Female donor: petri dish has donor_name + donor_mpeid
+        elif patient_type == 'female' and female_type == 'donor' and is_donor_stage:
+            # Female donor on early stages: dish has donor_name + donor_mpeid
             if field_name == 'name':
                 registered_value = case['female_patient'].get('donor_name', '')
             elif field_name == 'mpeid':
@@ -226,6 +246,7 @@ def validate_extraction(extracted, case, stage, fields_override=None):
             else:
                 registered_value = case[f'{patient_type}_patient'].get(field_name)
         else:
+            # Real patient stages OR non-donor cases: use real patient details
             registered_value = case[f'{patient_type}_patient'].get(field_name)
         
         # Normalize for comparison
@@ -330,7 +351,7 @@ def update_extraction_validation(source_arn, extraction_id, validation_result):
         UpdateExpression='SET validation_result = :result, validated_at = :timestamp',
         ExpressionAttributeValues={
             ':result': validation_result,
-            ':timestamp': datetime.utcnow().isoformat()
+            ':timestamp': now_ist_iso()
         }
     )
 
@@ -401,7 +422,7 @@ def update_case_validation(session_id, stage, validation_result, token_totals):
         ExpressionAttributeValues={
             ':status': status,
             ':result': 'match' if validation_result['overall_match'] else 'mismatch',
-            ':timestamp': datetime.utcnow().isoformat(),
+            ':timestamp': now_ist_iso(),
             ':stage_input': input_tokens,
             ':stage_output': output_tokens,
             ':stage_cost': stage_cost,
@@ -498,7 +519,7 @@ def create_failure_record(session_id, stage, validation_result, extraction_id, s
         'failureId': str(uuid.uuid4()),
         'sessionId': session_id,
         'stage': stage,
-        'failed_at': datetime.utcnow().isoformat(),
+        'failed_at': now_ist_iso(),
         'mismatched_fields': mismatched_fields,
         'primary_mismatch_reason': primary_mismatch_reason,
         'failed_extraction_id': extraction_id,
@@ -511,8 +532,8 @@ def create_failure_record(session_id, stage, validation_result, extraction_id, s
             'output': int(token_totals.get('output_tokens', 0))
         },
         'resolved_by_user': 'system',
-        'created_at': datetime.utcnow().isoformat(),
-        'updated_at': datetime.utcnow().isoformat()
+        'created_at': now_ist_iso(),
+        'updated_at': now_ist_iso()
     }
     
     failures_table.put_item(Item=failure_record)

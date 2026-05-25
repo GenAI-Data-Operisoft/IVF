@@ -1,8 +1,13 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
 import json
 import boto3
 from datetime import datetime
 import os
-from audit_helper import log_audit, extract_user_info, ACTIONS
+from audit_helper import log_audit, extract_user_info, ACTIONS, now_ist_iso, now_ist_date, now_ist_timestamp
 
 s3_client = boto3.client('s3', config=boto3.session.Config(signature_version='s3v4', s3={'addressing_style': 'path'}))
 dynamodb = boto3.resource('dynamodb')
@@ -22,6 +27,8 @@ STAGE_FOLDERS = {
     'culture': 'culture',
     'icsi_documentation': 'icsi-documentation',
     'blastocyst': 'blastocyst-stage',
+    'day6': 'day6',
+    'day7': 'day7',
 }
 
 def lambda_handler(event, context):
@@ -79,7 +86,7 @@ def lambda_handler(event, context):
             stage_folder = body.get('stageFolder', 'icsi')
             client_annotated = body.get('clientAnnotated', False)
             fixed_key = body.get('fixedKey')  # For Excel sheets — use exact S3 key
-            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            timestamp = now_ist_timestamp()
             
             # Fixed key mode (for Excel sheets)
             if fixed_key:
@@ -150,7 +157,7 @@ def lambda_handler(event, context):
                         'name': case.get('female_patient', {}).get('name', ''),
                         'mpeid': case.get('female_patient', {}).get('mpeid', '')
                     },
-                    'captured_at': datetime.utcnow().isoformat(),
+                    'captured_at': now_ist_iso(),
                     'annotation_status': 'completed',
                     'download_count': 0
                 })
@@ -223,7 +230,7 @@ def lambda_handler(event, context):
             }
         
         # Generate S3 key
-        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        timestamp = now_ist_timestamp()
         s3_key = f"{STAGE_FOLDERS[stage]}/{session_id}/image_{image_number}_{timestamp}.jpg"
         
         # Generate pre-signed URL for PUT operation.

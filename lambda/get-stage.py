@@ -20,6 +20,17 @@ STAGE_TABLE_MAP = {
     'day7':                   os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
 }
 
+
+# Map stage IDs to their S3 folder prefixes for filtering shared tables
+STAGE_S3_PREFIX_MAP = {
+    'label_validation':    'label-validation/',
+    'fertilization_check': 'fertilization-check/',
+    'icsi_documentation':  'icsi-documentation/',
+    'blastocyst':          'blastocyst-stage/',
+    'day6':                'day6/',
+    'day7':                'day7/',
+}
+
 def lambda_handler(event, context):
     try:
         session_id = event['pathParameters']['sessionId']
@@ -40,6 +51,15 @@ def lambda_handler(event, context):
             ExpressionAttributeValues={':sid': session_id}
         )
 
+        # Filter extractions by S3 path prefix when multiple stages share the same table
+        items = response['Items']
+        s3_prefix = STAGE_S3_PREFIX_MAP.get(stage)
+        if s3_prefix:
+            items = [
+                item for item in items
+                if item.get('s3_path', '').find(s3_prefix) != -1
+            ]
+
         return {
             'statusCode': 200,
             'headers': {
@@ -49,7 +69,7 @@ def lambda_handler(event, context):
             'body': json.dumps({
                 'stage': stage,
                 'sessionId': session_id,
-                'extractions': response['Items']
+                'extractions': items
             }, default=str)
         }
     except Exception as e:

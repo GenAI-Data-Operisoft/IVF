@@ -146,6 +146,7 @@ def format_session(item):
 
     return {
         'sessionId': item.get('sessionId'),
+        'case_type': item.get('case_type', ''),
         'procedure_start_date': item.get('procedure_start_date'),
         'center': item.get('center', ''),
         'doctor_name': item.get('doctor_name', ''),

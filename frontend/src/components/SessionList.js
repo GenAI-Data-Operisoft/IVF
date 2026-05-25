@@ -14,10 +14,11 @@ const CENTERS = [
 
 function SessionList({ onSelectSession, onStartNew, onBack, user }) {
   const [sessions, setSessions] = useState([]);
+  const [allSessions, setAllSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searching, setSearching] = useState(false);
   const [centerFilter, setCenterFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
 
   const isAdmin = user?.role === 'admin';
   const userCenter = user?.centers?.[0] || '';
@@ -27,28 +28,52 @@ function SessionList({ onSelectSession, onStartNew, onBack, user }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [centerFilter]);
 
+  // Live filter whenever searchQuery or dateFilter changes
+  useEffect(() => {
+    applyFilters(allSessions, searchQuery, dateFilter);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, dateFilter, allSessions]);
+
   const loadSessions = async () => {
     setLoading(true);
     try {
-      const data = await api.listSessions(50, userCenter, isAdmin, centerFilter);
-      setSessions(data.sessions || []);
+      const data = await api.listSessions(200, userCenter, isAdmin, centerFilter);
+      const list = data.sessions || [];
+      setAllSessions(list);
+      applyFilters(list, searchQuery, dateFilter);
     } catch (error) {
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    if (!searchQuery.trim()) { loadSessions(); return; }
-    setSearching(true);
-    try {
-      const data = await api.searchSessions(searchQuery, userCenter, isAdmin, centerFilter);
-      setSessions(data.sessions || []);
-    } catch (error) {
-    } finally {
-      setSearching(false);
+  const applyFilters = (list, query, date) => {
+    let filtered = list;
+    if (query.trim()) {
+      const q = query.trim().toLowerCase();
+      filtered = filtered.filter(s => {
+        const maleName = (s.male_patient?.name || '').toLowerCase();
+        const femaleName = (s.female_patient?.name || '').toLowerCase();
+        const maleMpeid = (s.male_patient?.mpeid || '').toLowerCase();
+        const femaleMpeid = (s.female_patient?.mpeid || '').toLowerCase();
+        const sessionId = (s.sessionId || '').toLowerCase();
+        const maleFirstName = maleName.split(' ')[0];
+        const femaleFirstName = femaleName.split(' ')[0];
+        // Match: starts-with on names/IDs, or contains anywhere
+        return maleFirstName.startsWith(q) || femaleFirstName.startsWith(q) ||
+               maleName.includes(q) || femaleName.includes(q) ||
+               maleMpeid.startsWith(q) || femaleMpeid.startsWith(q) ||
+               maleMpeid.includes(q) || femaleMpeid.includes(q) ||
+               sessionId.startsWith(q) || sessionId.includes(q);
+      });
     }
+    if (date) {
+      filtered = filtered.filter(s => {
+        const d = s.procedure_start_date || s.created_at || '';
+        return d.startsWith(date);
+      });
+    }
+    setSessions(filtered);
   };
 
   const getStatusIcon = (status) => {
@@ -86,23 +111,41 @@ function SessionList({ onSelectSession, onStartNew, onBack, user }) {
 
       <div className="search-section">
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          {/* Search form */}
-          <form onSubmit={handleSearch} className="search-form" style={{ flex: 1, minWidth: '280px' }}>
+          {/* Live search input */}
+          <div style={{ flex: 1, minWidth: '280px', position: 'relative' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '12px', top: '38%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input
               type="text"
-              placeholder="Search by MPID, Patient Name, or Session ID..."
+              placeholder="Type a name, MPID, or Session ID to filter..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="search-input"
+              style={{ paddingLeft: '36px', paddingRight: searchQuery ? '36px' : '12px' }}
             />
-            <button type="submit" className="btn-primary" disabled={searching} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              {searching ? 'Searching...' : 'Search'}
-            </button>
             {searchQuery && (
-              <button type="button" onClick={() => { setSearchQuery(''); loadSessions(); }} className="btn-secondary">Clear</button>
+              <button type="button" onClick={() => setSearchQuery('')} style={{ position: 'absolute', right: '10px', top: '38%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: '1rem', lineHeight: 1 }}>✕</button>
             )}
-          </form>
+            {!searchQuery && (
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '3px', paddingLeft: '4px' }}>
+                Start typing to instantly filter — works with first name, partial ID, or session ID
+              </div>
+            )}
+          </div>
+
+          {/* Date filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#667eea" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <label style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 600, whiteSpace: 'nowrap' }}>Date:</label>
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              style={{ padding: '0.55rem 0.75rem', border: '2px solid #e2e8f0', borderRadius: '8px', fontSize: '0.88rem', outline: 'none', background: 'white', cursor: 'pointer', color: dateFilter ? '#1a202c' : '#94a3b8' }}
+            />
+            {dateFilter && (
+              <button type="button" onClick={() => setDateFilter('')} className="btn-secondary" style={{ padding: '0.5rem 0.75rem', fontSize: '0.82rem' }}>Clear</button>
+            )}
+          </div>
 
           {/* Center filter — admin only */}
           {isAdmin && (
@@ -117,13 +160,20 @@ function SessionList({ onSelectSession, onStartNew, onBack, user }) {
                 {CENTERS.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               {centerFilter && (
-                <button type="button" onClick={() => setCenterFilter('')} className="btn-secondary" style={{ padding: '0.5rem 0.75rem', fontSize: '0.82rem' }}>
-                  Clear
-                </button>
+                <button type="button" onClick={() => setCenterFilter('')} className="btn-secondary" style={{ padding: '0.5rem 0.75rem', fontSize: '0.82rem' }}>Clear</button>
               )}
             </div>
           )}
         </div>
+        {/* Active filter summary */}
+        {(searchQuery || dateFilter) && (
+          <div style={{ marginTop: '0.5rem', fontSize: '0.82rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>Showing {sessions.length} result{sessions.length !== 1 ? 's' : ''}</span>
+            {searchQuery && <span style={{ background: '#e0e7ff', color: '#4338ca', padding: '1px 8px', borderRadius: '8px' }}>"{searchQuery}"</span>}
+            {dateFilter && <span style={{ background: '#e0e7ff', color: '#4338ca', padding: '1px 8px', borderRadius: '8px' }}>{dateFilter}</span>}
+            <button type="button" onClick={() => { setSearchQuery(''); setDateFilter(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '0.78rem', textDecoration: 'underline' }}>Clear all</button>
+          </div>
+        )}
       </div>
 
       {loading ? (

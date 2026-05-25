@@ -1,3 +1,9 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
+from audit_helper import now_ist_iso, now_ist_date, now_ist_timestamp
 """
 increment-download-count.py
 
@@ -34,7 +40,7 @@ def lambda_handler(event, context):
             ExpressionAttributeValues={
                 ':inc': 1,
                 ':zero': 0,
-                ':timestamp': datetime.utcnow().isoformat()
+                ':timestamp': now_ist_iso()
             },
             ReturnValues='ALL_NEW'
         )

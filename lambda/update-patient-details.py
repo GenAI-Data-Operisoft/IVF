@@ -1,8 +1,13 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
 import json
 import boto3
 import os
 from datetime import datetime
-from audit_helper import log_audit, extract_user_info, create_change_details, ACTIONS
+from audit_helper import log_audit, extract_user_info, now_ist_iso, now_ist_date, now_ist_timestamp, create_change_details, ACTIONS
 
 dynamodb = boto3.resource('dynamodb')
 cases_table = dynamodb.Table(os.environ.get('CASES_TABLE', 'IVF-Cases'))
@@ -87,7 +92,7 @@ def lambda_handler(event, context):
         expression_values = {
             ':male': new_male,
             ':female': new_female,
-            ':timestamp': datetime.utcnow().isoformat()
+            ':timestamp': now_ist_iso()
         }
         
         cases_table.update_item(

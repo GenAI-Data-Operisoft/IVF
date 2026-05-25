@@ -109,7 +109,7 @@ function AuditLog({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filters, setFilters] = useState({
-    startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0],
     action: '',
     stage: '',
@@ -128,10 +128,46 @@ function AuditLog({ onBack }) {
     setLoading(true);
     setError('');
     try {
-      const data = await api.getAuditLogs(filters);
-      setLogs(data.logs || []);
-      setActionCounts(data.action_counts || {});
-      setTotalCount(data.total_count || 0);
+      // Send all filters except center to the API (center is filtered client-side)
+      const apiFilters = { ...filters, center: '' };
+      const data = await api.getAuditLogs(apiFilters);
+      let allLogs = data.logs || [];
+
+      // Client-side center filter — match by session's center stored in log details
+      // or by checking if the log's details.center matches
+      if (filters.center) {
+        // First try direct center match on the log
+        // Then fall back to matching by session IDs that belong to this center
+        const directMatch = allLogs.filter(log => {
+          const logCenter = log.center || (log.details && log.details.center) || '';
+          return logCenter === filters.center;
+        });
+        
+        if (directMatch.length > 0) {
+          allLogs = directMatch;
+        } else {
+          // Get session IDs from REGISTER_CASE events for this center
+          const centerSessions = new Set(
+            allLogs
+              .filter(l => l.action === 'REGISTER_CASE' && 
+                ((l.details && l.details.center === filters.center) || l.center === filters.center))
+              .map(l => l.session_id)
+              .filter(Boolean)
+          );
+          if (centerSessions.size > 0) {
+            allLogs = allLogs.filter(l => centerSessions.has(l.session_id));
+          } else {
+            allLogs = [];
+          }
+        }
+      }
+
+      setLogs(allLogs);
+      // Recalculate action counts after client-side filter
+      const counts = {};
+      allLogs.forEach(l => { counts[l.action] = (counts[l.action] || 0) + 1; });
+      setActionCounts(counts);
+      setTotalCount(allLogs.length);
     } catch (err) {
       setError('Failed to load audit logs. Please try again.');
     } finally {
@@ -146,11 +182,20 @@ function AuditLog({ onBack }) {
   const handleApplyFilters = () => { loadAuditLogs(); };
 
   const handleClearFilters = () => {
-    setFilters({
-      startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    const cleared = {
+      startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       endDate: new Date().toISOString().split('T')[0],
       action: '', stage: '', userEmail: '', sessionId: '', center: ''
-    });
+    };
+    setFilters(cleared);
+    // Load with cleared filters immediately
+    setLoading(true);
+    setError('');
+    api.getAuditLogs(cleared).then(data => {
+      setLogs(data.logs || []);
+      setActionCounts(data.action_counts || {});
+      setTotalCount(data.total_count || 0);
+    }).catch(() => setError('Failed to load audit logs.')).finally(() => setLoading(false));
   };
 
   const handleExportCSV = () => {
@@ -201,7 +246,8 @@ function AuditLog({ onBack }) {
   };
 
   const formatTimestamp = (timestamp) => {
-    return new Date(timestamp).toLocaleString('en-US', {
+    return new Date(timestamp).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
       year: 'numeric', month: 'short', day: 'numeric',
       hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
@@ -303,9 +349,12 @@ function AuditLog({ onBack }) {
               <option value="OCR_EXTRACT">OCR Extract</option>
               <option value="IMAGE_ANNOTATED">Image Annotated</option>
               <option value="RESOLVE_FAILURE">Resolve Failure</option>
+              <option value="AI_GRADING_COMPLETED">AI Grading Success</option>
+              <option value="AI_GRADING_FAILED">AI Grading Failed</option>
               <option value="STOP_WAITING">Stop Waiting</option>
               <option value="SAVE_REMARK">Save Remark</option>
               <option value="SAVE_MANUAL_GRADE">Save Manual Grade</option>
+              <option value="MANUAL_GRADE_SAVED">Manual Grade Saved</option>
             </select>
           </div>
           <div className="filter-group">
@@ -322,6 +371,7 @@ function AuditLog({ onBack }) {
               <option value="blastocyst">Blastocyst (Day 5)</option>
               <option value="day6">Day 6</option>
               <option value="day7">Day 7</option>
+              <option value="iui">IUI</option>
               <option value="culture">Frozen Embryo Transfer (FET)</option>
             </select>
           </div>

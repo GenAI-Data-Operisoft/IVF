@@ -1,3 +1,8 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
 """
 registration-handler.py
 
@@ -15,7 +20,7 @@ import boto3
 import uuid
 from datetime import datetime
 import os
-from audit_helper import log_audit, extract_user_info, ACTIONS
+from audit_helper import log_audit, extract_user_info, ACTIONS, now_ist_iso, now_ist_date, now_ist_timestamp
 
 dynamodb = boto3.resource('dynamodb')
 cases_table = dynamodb.Table(os.environ.get('CASES_TABLE', 'IVF-Cases'))
@@ -52,9 +57,19 @@ def lambda_handler(event, context):
     """
     Main handler. Validates the request body, creates the case record,
     and returns the new session ID to the frontend.
+    Routes social-freezing requests to dedicated handler.
     """
+    # Route social freezing requests
+    path = event.get('path', '') or event.get('resource', '')
+    if 'social-freezing' in path:
+        return handle_social_freezing(event, context)
+
     try:
         body = json.loads(event['body'])
+
+        # Route social freezing registration via case_type field
+        if body.get('case_type') == 'social_freezing':
+            return sf_register_from_body(body, event)
 
         # Make sure all required fields are present before proceeding
         required_fields = ['male_patient', 'female_patient', 'procedure_start_date']
@@ -87,6 +102,7 @@ def lambda_handler(event, context):
             'female_patient': {
                 'name': body['female_patient']['name'].upper(),
                 'mpeid': body['female_patient'].get('mpeid', ''),
+                'phone_number': body['female_patient'].get('phone_number', ''),
                 'dob': body['female_patient'].get('dob'),
                 'type': body['female_patient'].get('type', 'self'),
                 'donor_name': (body['female_patient'].get('donor_name') or '').upper(),
@@ -102,7 +118,7 @@ def lambda_handler(event, context):
                 'model_id': 'anthropic.claude-sonnet-4-5-20250929-v1:0',
                 'model_name': 'Claude Sonnet 4.5'
             }),
-            'created_at': datetime.utcnow().isoformat(),
+            'created_at': now_ist_iso(),
             'current_stage': 'label_validation',
             # All stages start as pending.
             'stages': {
@@ -185,3 +201,150 @@ def lambda_handler(event, context):
             'headers': {'Content-Type': 'application/json'},
             'body': json.dumps({'error': 'Internal server error'})
         }
+
+
+def sf_register_from_body(body, event):
+    """Register a social freezing case via the existing /register endpoint."""
+    female = body.get('female_patient', {})
+    if not female.get('name') or not female.get('mpeid'):
+        return {'statusCode': 400, 'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}, 'body': json.dumps({'error': 'female_patient name and mpeid required'})}
+
+    session_id = str(uuid.uuid4())
+    user_info, ip = extract_user_info(event)
+    center = body.get('center', '') or get_user_center(event)
+
+    # Store in the main IVF-Cases table with case_type flag — existing /case/{id} endpoint works automatically
+    item = {
+        'sessionId': session_id,
+        'case_type': 'social_freezing',
+        'female_patient': {
+            'name': female.get('name', '').upper().strip(),
+            'mpeid': female.get('mpeid', '').strip(),
+            'type': 'self',
+        },
+        'male_patient': {'name': 'N/A', 'mpeid': '0', 'type': 'na'},
+        'procedure_start_date': body.get('procedure_date', now_ist_date()),
+        'doctor_name': body.get('doctor_name', ''),
+        'center': center,
+        'model_config': body.get('model_config', {'model_id': 'qwen.qwen3-vl-235b-a22b', 'model_name': 'Qwen3 VL 235B'}),
+        'created_at': now_ist_iso(),
+        'created_by': user_info.get('userId', 'unknown'),
+        'stages': {
+            'label_validation': {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
+            'culture':          {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
+        },
+        'status': 'active',
+    }
+
+    cases_table.put_item(Item=item)
+
+    log_audit(user_info=user_info, action='REGISTER_CASE', resource_type='social_freezing_case',
+              resource_id=session_id, session_id=session_id, stage='registration', result='success',
+              ip_address=ip, metadata={'case_type': 'social_freezing', 'female_name': female.get('name'), 'center': center})
+
+    return {'statusCode': 200, 'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+            'body': json.dumps({'sessionId': session_id, 'message': 'Social freezing case registered'})}
+
+
+# ─── Social Embryo Freezing ───────────────────────────────────────────────────
+
+social_freezing_table = dynamodb.Table(os.environ.get('SOCIAL_FREEZING_TABLE', 'IVF-SocialFreezing'))
+
+CORS = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+}
+
+
+def handle_social_freezing(event, context):
+    """Handle all /social-freezing/* routes."""
+    if event.get('httpMethod') == 'OPTIONS':
+        return {'statusCode': 200, 'headers': CORS, 'body': ''}
+
+    method = event.get('httpMethod', 'GET')
+    path = event.get('path', '')
+    path_params = event.get('pathParameters') or {}
+
+    try:
+        # POST /social-freezing/register
+        if method == 'POST' and 'register' in path:
+            return sf_register(event)
+
+        # GET /social-freezing/{sessionId}
+        if method == 'GET' and path_params.get('sessionId'):
+            return sf_get_case(path_params['sessionId'])
+
+        # GET /social-freezing — list cases
+        if method == 'GET':
+            return sf_list_cases()
+
+        return {'statusCode': 405, 'headers': CORS, 'body': json.dumps({'error': 'Method not allowed'})}
+
+    except Exception as e:
+        print(f"Social freezing error: {e}")
+        import traceback; traceback.print_exc()
+        return {'statusCode': 500, 'headers': CORS, 'body': json.dumps({'error': str(e)})}
+
+
+def sf_register(event):
+    body = json.loads(event.get('body') or '{}')
+    female = body.get('female_patient', {})
+
+    if not female.get('name') or not female.get('mpeid'):
+        return {'statusCode': 400, 'headers': CORS, 'body': json.dumps({'error': 'female_patient name and mpeid required'})}
+
+    session_id = str(uuid.uuid4())
+    user_info, ip = extract_user_info(event)
+    center = body.get('center', '') or get_user_center(event)
+
+    item = {
+        'sessionId': session_id,
+        'case_type': 'social_freezing',
+        'female_patient': {
+            'name': female.get('name', '').upper().strip(),
+            'mpeid': female.get('mpeid', '').strip(),
+            'type': female.get('type', 'self'),
+        },
+        'procedure_date': body.get('procedure_date', now_ist_date()),
+        'doctor_name': body.get('doctor_name', ''),
+        'center': center,
+        'model_config': body.get('model_config', {'model_id': 'qwen.qwen3-vl-235b-a22b', 'model_name': 'Qwen3 VL 235B'}),
+        'created_at': now_ist_iso(),
+        'created_by': user_info.get('userId', 'unknown'),
+        'stages': {
+            'label_validation': {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
+            'culture':          {'status': 'pending', 'images_required': 1, 'images_uploaded': 0},
+        },
+        'status': 'active',
+    }
+
+    social_freezing_table.put_item(Item=item)
+
+    log_audit(
+        user_info=user_info,
+        action='REGISTER_CASE',
+        resource_type='social_freezing_case',
+        resource_id=session_id,
+        session_id=session_id,
+        stage='registration',
+        result='success',
+        ip_address=ip,
+        metadata={'case_type': 'social_freezing', 'female_name': female.get('name'), 'female_mpeid': female.get('mpeid'), 'center': center}
+    )
+
+    return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({'sessionId': session_id, 'message': 'Social freezing case registered'})}
+
+
+def sf_get_case(session_id):
+    resp = social_freezing_table.get_item(Key={'sessionId': session_id})
+    if 'Item' not in resp:
+        return {'statusCode': 404, 'headers': CORS, 'body': json.dumps({'error': 'Case not found'})}
+    return {'statusCode': 200, 'headers': CORS, 'body': json.dumps(resp['Item'], default=str)}
+
+
+def sf_list_cases():
+    resp = social_freezing_table.scan(Limit=50)
+    items = sorted(resp.get('Items', []), key=lambda x: x.get('created_at', ''), reverse=True)
+    return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({'cases': items}, default=str)}

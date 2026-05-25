@@ -1,8 +1,13 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
 import json
 import boto3
 from datetime import datetime
 import os
-from audit_helper import log_audit, extract_user_info, ACTIONS
+from audit_helper import log_audit, extract_user_info, ACTIONS, now_ist_iso, now_ist_date, now_ist_timestamp
 
 dynamodb = boto3.resource('dynamodb')
 failures_table = dynamodb.Table(os.environ.get('FAILURES_TABLE', 'IVF-ValidationFailures'))
@@ -58,7 +63,7 @@ def lambda_handler(event, context):
         failed_at = failure['failed_at']
         
         # Calculate resolution time
-        resolved_at = datetime.utcnow().isoformat()
+        resolved_at = now_ist_iso()
         failed_time = datetime.fromisoformat(failed_at.replace('Z', '+00:00'))
         resolved_time = datetime.fromisoformat(resolved_at)
         resolution_time_minutes = int((resolved_time - failed_time).total_seconds() / 60)

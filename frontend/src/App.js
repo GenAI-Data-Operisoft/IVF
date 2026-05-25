@@ -26,6 +26,7 @@ import AuditLog from './components/AuditLog';
 import UserManagement from './components/UserManagement';
 import ExcelViewer from './components/ExcelViewer';
 import IUIStage from './components/IUIStage';
+import SocialFreezingHome from './components/SocialFreezingHome';
 import Chatbot from './components/Chatbot';
 
 // Configure Amplify
@@ -182,6 +183,10 @@ function App() {
 
   const handleViewExcel = () => {
     setCurrentView('excel');
+  };
+
+  const handleViewSocialFreezing = () => {
+    setCurrentView('social-freezing');
   };
 
   const handleStartCapture = () => {
@@ -346,6 +351,7 @@ function App() {
             onViewAuditLog={handleViewAuditLog}
             onViewUserManagement={handleViewUserManagement}
             onViewExcel={handleViewExcel}
+            onViewSocialFreezing={handleViewSocialFreezing}
             userRole={user?.role}
             user={user}
           />
@@ -399,7 +405,7 @@ function App() {
                 caseData={caseData}
                 onComplete={handleStageComplete}
                 onViewStatus={handleViewStatus}
-                stageTitle="Day 6"
+                stageTitle="Blastocyst (Day 6)"
                 stageId="day6"
                 stageKey="day6"
               />
@@ -409,7 +415,7 @@ function App() {
                 caseData={caseData}
                 onComplete={handleStageComplete}
                 onViewStatus={handleViewStatus}
-                stageTitle="Day 7"
+                stageTitle="Blastocyst (Day 7)"
                 stageId="day7"
                 stageKey="day7"
               />
@@ -494,9 +500,13 @@ function App() {
         {currentView === 'excel' && (
           <ExcelViewer onBack={handleBackToHome} user={user} />
         )}
+
+        {currentView === 'social-freezing' && (
+          <SocialFreezingHome onBack={handleBackToHome} user={user} />
+        )}
       </main>
 
-      {/* Chatbot hidden — {canUseChatbot() && <Chatbot />} */}
+      {canUseChatbot() && <Chatbot />}
 
       <footer className="App-footer">
         <p>© 2026 Cloudnine Hospital — Fertility Management System</p>

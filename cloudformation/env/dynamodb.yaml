@@ -1,14 +1,20 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'IVF Witness Capture - DynamoDB Tables'
+Description: 'IVF DEV Environment - All DynamoDB Tables'
+
+Parameters:
+  Env:
+    Type: String
+    Default: Dev
+    Description: Environment name for resource naming
 
 Resources:
   # ========================================
   # Main Cases Table
   # ========================================
-  IVFCasesTable:
+  CasesTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: IVF-Cases
+      TableName: !Sub 'IVF-${Env}-Cases'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: sessionId
@@ -20,15 +26,7 @@ Resources:
         PointInTimeRecoveryEnabled: true
       Tags:
         - Key: Application
-          Value: IVF-WitnessCapture
-        - Key: Project
-          Value: Cloudnine-IVF
-        - Key: Environment
-          Value: Production
-        - Key: ManagedBy
-          Value: CloudFormation
-        - Key: Owner
-          Value: Cloudnine
+          Value: IVF-Witness-Capture
         - Key: Environment
           Value: Development
 
@@ -38,7 +36,7 @@ Resources:
   LabelValidationExtractionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: IVF-LabelValidationExtractions
+      TableName: !Sub 'IVF-${Env}-LabelValidationExtractions'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: extractionId
@@ -61,15 +59,7 @@ Resources:
         PointInTimeRecoveryEnabled: true
       Tags:
         - Key: Application
-          Value: IVF-WitnessCapture
-        - Key: Project
-          Value: Cloudnine-IVF
-        - Key: Environment
-          Value: Production
-        - Key: ManagedBy
-          Value: CloudFormation
-        - Key: Owner
-          Value: Cloudnine
+          Value: IVF-Witness-Capture
         - Key: Environment
           Value: Development
 
@@ -79,7 +69,7 @@ Resources:
   MaleSampleCollectionExtractionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: IVF-MaleSampleCollectionExtractions
+      TableName: !Sub 'IVF-${Env}-MaleSampleCollectionExtractions'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: extractionId
@@ -102,15 +92,7 @@ Resources:
         PointInTimeRecoveryEnabled: true
       Tags:
         - Key: Application
-          Value: IVF-WitnessCapture
-        - Key: Project
-          Value: Cloudnine-IVF
-        - Key: Environment
-          Value: Production
-        - Key: ManagedBy
-          Value: CloudFormation
-        - Key: Owner
-          Value: Cloudnine
+          Value: IVF-Witness-Capture
         - Key: Environment
           Value: Development
 
@@ -120,7 +102,7 @@ Resources:
   OocyteCollectionExtractionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: IVF-OocyteCollectionExtractions
+      TableName: !Sub 'IVF-${Env}-OocyteCollectionExtractions'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: extractionId
@@ -143,15 +125,7 @@ Resources:
         PointInTimeRecoveryEnabled: true
       Tags:
         - Key: Application
-          Value: IVF-WitnessCapture
-        - Key: Project
-          Value: Cloudnine-IVF
-        - Key: Environment
-          Value: Production
-        - Key: ManagedBy
-          Value: CloudFormation
-        - Key: Owner
-          Value: Cloudnine
+          Value: IVF-Witness-Capture
         - Key: Environment
           Value: Development
 
@@ -161,7 +135,7 @@ Resources:
   DenudationExtractionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: IVF-DenudationExtractions
+      TableName: !Sub 'IVF-${Env}-DenudationExtractions'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: extractionId
@@ -184,15 +158,7 @@ Resources:
         PointInTimeRecoveryEnabled: true
       Tags:
         - Key: Application
-          Value: IVF-WitnessCapture
-        - Key: Project
-          Value: Cloudnine-IVF
-        - Key: Environment
-          Value: Production
-        - Key: ManagedBy
-          Value: CloudFormation
-        - Key: Owner
-          Value: Cloudnine
+          Value: IVF-Witness-Capture
         - Key: Environment
           Value: Development
 
@@ -202,7 +168,7 @@ Resources:
   ICSIExtractionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: IVF-ICSIExtractions
+      TableName: !Sub 'IVF-${Env}-ICSIExtractions'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: extractionId
@@ -225,15 +191,7 @@ Resources:
         PointInTimeRecoveryEnabled: true
       Tags:
         - Key: Application
-          Value: IVF-WitnessCapture
-        - Key: Project
-          Value: Cloudnine-IVF
-        - Key: Environment
-          Value: Production
-        - Key: ManagedBy
-          Value: CloudFormation
-        - Key: Owner
-          Value: Cloudnine
+          Value: IVF-Witness-Capture
         - Key: Environment
           Value: Development
 
@@ -243,7 +201,7 @@ Resources:
   CultureExtractionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: IVF-CultureExtractions
+      TableName: !Sub 'IVF-${Env}-CultureExtractions'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: extractionId
@@ -266,99 +224,213 @@ Resources:
         PointInTimeRecoveryEnabled: true
       Tags:
         - Key: Application
-          Value: IVF-WitnessCapture
-        - Key: Project
-          Value: Cloudnine-IVF
+          Value: IVF-Witness-Capture
         - Key: Environment
-          Value: Production
-        - Key: ManagedBy
-          Value: CloudFormation
-        - Key: Owner
-          Value: Cloudnine
+          Value: Development
+
+  # ========================================
+  # Audit Log Table
+  # ========================================
+  AuditLogTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'IVF-${Env}-AuditLog'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: auditId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+        - AttributeName: action
+          AttributeType: S
+        - AttributeName: patientMPEID
+          AttributeType: S
+      KeySchema:
+        - AttributeName: auditId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: UserIdIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: SessionIdIndex
+          KeySchema:
+            - AttributeName: sessionId
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: ActionIndex
+          KeySchema:
+            - AttributeName: action
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: PatientIndex
+          KeySchema:
+            - AttributeName: patientMPEID
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      StreamSpecification:
+        StreamViewType: NEW_IMAGE
+      Tags:
+        - Key: Application
+          Value: IVF-Witness-Capture
+        - Key: Environment
+          Value: Development
+
+  # ========================================
+  # Validation Failures Table
+  # ========================================
+  ValidationFailuresTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'IVF-${Env}-ValidationFailures'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: failureId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+        - AttributeName: stage
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: failed_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: failureId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: SessionIdIndex
+          KeySchema:
+            - AttributeName: sessionId
+              KeyType: HASH
+            - AttributeName: failed_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: StageIndex
+          KeySchema:
+            - AttributeName: stage
+              KeyType: HASH
+            - AttributeName: failed_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: StatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: failed_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Application
+          Value: IVF-Witness-Capture
+        - Key: Environment
+          Value: Development
+
+  # ========================================
+  # Injected Oocyte Images Table
+  # ========================================
+  InjectedOocyteImagesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'IVF-${Env}-InjectedOocyteImages'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: imageId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: imageId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: SessionIdIndex
+          KeySchema:
+            - AttributeName: sessionId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Application
+          Value: IVF-Witness-Capture
         - Key: Environment
           Value: Development
 
 Outputs:
   CasesTableName:
-    Description: Cases table name
-    Value: !Ref IVFCasesTable
-    Export:
-      Name: !Sub '${AWS::StackName}-CasesTable'
-
+    Value: !Ref CasesTable
   CasesTableArn:
-    Description: Cases table ARN
-    Value: !GetAtt IVFCasesTable.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-CasesTableArn'
-
+    Value: !GetAtt CasesTable.Arn
   LabelValidationTableName:
-    Description: Label Validation Extractions table name
     Value: !Ref LabelValidationExtractionsTable
-    Export:
-      Name: !Sub '${AWS::StackName}-LabelValidationTable'
-
-  LabelValidationTableStreamArn:
-    Description: Label Validation table stream ARN
+  LabelValidationTableArn:
+    Value: !GetAtt LabelValidationExtractionsTable.Arn
+  LabelValidationStreamArn:
     Value: !GetAtt LabelValidationExtractionsTable.StreamArn
-    Export:
-      Name: !Sub '${AWS::StackName}-LabelValidationStreamArn'
-
   MaleSampleCollectionTableName:
-    Description: Male Sample Collection Extractions table name
     Value: !Ref MaleSampleCollectionExtractionsTable
-    Export:
-      Name: !Sub '${AWS::StackName}-MaleSampleCollectionTable'
-
-  MaleSampleCollectionTableStreamArn:
-    Description: Male Sample Collection table stream ARN
+  MaleSampleCollectionTableArn:
+    Value: !GetAtt MaleSampleCollectionExtractionsTable.Arn
+  MaleSampleCollectionStreamArn:
     Value: !GetAtt MaleSampleCollectionExtractionsTable.StreamArn
-    Export:
-      Name: !Sub '${AWS::StackName}-MaleSampleCollectionStreamArn'
-
   OocyteCollectionTableName:
-    Description: Oocyte Collection Extractions table name
     Value: !Ref OocyteCollectionExtractionsTable
-    Export:
-      Name: !Sub '${AWS::StackName}-OocyteCollectionTable'
-
-  OocyteCollectionTableStreamArn:
-    Description: Oocyte Collection table stream ARN
+  OocyteCollectionTableArn:
+    Value: !GetAtt OocyteCollectionExtractionsTable.Arn
+  OocyteCollectionStreamArn:
     Value: !GetAtt OocyteCollectionExtractionsTable.StreamArn
-    Export:
-      Name: !Sub '${AWS::StackName}-OocyteCollectionStreamArn'
-
   DenudationTableName:
-    Description: Denudation Extractions table name
     Value: !Ref DenudationExtractionsTable
-    Export:
-      Name: !Sub '${AWS::StackName}-DenudationTable'
-
-  DenudationTableStreamArn:
-    Description: Denudation table stream ARN
+  DenudationTableArn:
+    Value: !GetAtt DenudationExtractionsTable.Arn
+  DenudationStreamArn:
     Value: !GetAtt DenudationExtractionsTable.StreamArn
-    Export:
-      Name: !Sub '${AWS::StackName}-DenudationStreamArn'
-
   ICSITableName:
-    Description: ICSI Extractions table name
     Value: !Ref ICSIExtractionsTable
-    Export:
-      Name: !Sub '${AWS::StackName}-ICSITable'
-
-  ICSITableStreamArn:
-    Description: ICSI table stream ARN
+  ICSITableArn:
+    Value: !GetAtt ICSIExtractionsTable.Arn
+  ICSIStreamArn:
     Value: !GetAtt ICSIExtractionsTable.StreamArn
-    Export:
-      Name: !Sub '${AWS::StackName}-ICSIStreamArn'
-
   CultureTableName:
-    Description: Culture Extractions table name
     Value: !Ref CultureExtractionsTable
-    Export:
-      Name: !Sub '${AWS::StackName}-CultureTable'
-
-  CultureTableStreamArn:
-    Description: Culture table stream ARN
+  CultureTableArn:
+    Value: !GetAtt CultureExtractionsTable.Arn
+  CultureStreamArn:
     Value: !GetAtt CultureExtractionsTable.StreamArn
-    Export:
-      Name: !Sub '${AWS::StackName}-CultureStreamArn'
+  AuditLogTableName:
+    Value: !Ref AuditLogTable
+  AuditLogTableArn:
+    Value: !GetAtt AuditLogTable.Arn
+  AuditLogStreamArn:
+    Value: !GetAtt AuditLogTable.StreamArn
+  ValidationFailuresTableName:
+    Value: !Ref ValidationFailuresTable
+  ValidationFailuresTableArn:
+    Value: !GetAtt ValidationFailuresTable.Arn
+  InjectedOocyteImagesTableName:
+    Value: !Ref InjectedOocyteImagesTable
+  InjectedOocyteImagesTableArn:
+    Value: !GetAtt InjectedOocyteImagesTable.Arn

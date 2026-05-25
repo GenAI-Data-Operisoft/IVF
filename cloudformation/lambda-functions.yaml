@@ -12,6 +12,23 @@ Parameters:
     Default: fms-ivf-witness-capture-s3
     Description: Name of the S3 CloudFormation stack
 
+# ============================================================
+# Common tags applied to all resources in this template.
+# Update here to propagate across the entire stack.
+# ============================================================
+Metadata:
+  CommonTags: &common_tags
+    - Key: Application
+      Value: IVF-WitnessCapture
+    - Key: Project
+      Value: Cloudnine-IVF
+    - Key: Environment
+      Value: Production
+    - Key: ManagedBy
+      Value: CloudFormation
+    - Key: Owner
+      Value: Cloudnine
+
 Resources:
   # ========================================
   # IAM Role for Lambda Functions
@@ -127,7 +144,15 @@ Resources:
             Fn::ImportValue: !Sub '${DynamoDBStackName}-CasesTable'
       Tags:
         - Key: Application
-          Value: FMS-IVF-WitnessCapture
+          Value: IVF-WitnessCapture
+        - Key: Project
+          Value: Cloudnine-IVF
+        - Key: Environment
+          Value: Production
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Owner
+          Value: Cloudnine
 
   # ========================================
   # Lambda Function: List Sessions
@@ -152,7 +177,15 @@ Resources:
             Fn::ImportValue: !Sub '${DynamoDBStackName}-CasesTable'
       Tags:
         - Key: Application
-          Value: FMS-IVF-WitnessCapture
+          Value: IVF-WitnessCapture
+        - Key: Project
+          Value: Cloudnine-IVF
+        - Key: Environment
+          Value: Production
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Owner
+          Value: Cloudnine
 
   # ========================================
   # Lambda Function: Presigned URL Generator
@@ -180,7 +213,15 @@ Resources:
           AUDIT_TABLE: IVF-AuditLog
       Tags:
         - Key: Application
-          Value: FMS-IVF-WitnessCapture
+          Value: IVF-WitnessCapture
+        - Key: Project
+          Value: Cloudnine-IVF
+        - Key: Environment
+          Value: Production
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Owner
+          Value: Cloudnine
 
   # ========================================
   # Lambda Function: OCR Processor
@@ -220,7 +261,15 @@ Resources:
           AUDIT_TABLE: IVF-AuditLog
       Tags:
         - Key: Application
-          Value: FMS-IVF-WitnessCapture
+          Value: IVF-WitnessCapture
+        - Key: Project
+          Value: Cloudnine-IVF
+        - Key: Environment
+          Value: Production
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Owner
+          Value: Cloudnine
 
   # ========================================
   # Lambda Function: Comparison Validator
@@ -246,7 +295,15 @@ Resources:
           AUDIT_TABLE: IVF-AuditLog
       Tags:
         - Key: Application
-          Value: FMS-IVF-WitnessCapture
+          Value: IVF-WitnessCapture
+        - Key: Project
+          Value: Cloudnine-IVF
+        - Key: Environment
+          Value: Production
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Owner
+          Value: Cloudnine
 
   # ========================================
   # EventBridge Rule: S3 Object Created

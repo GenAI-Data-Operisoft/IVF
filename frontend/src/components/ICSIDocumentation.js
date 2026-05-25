@@ -388,11 +388,24 @@ function ICSIDocumentation({ sessionId, caseData, onComplete, onViewStatus }) {
           <h4>Male Patient</h4>
           <p><strong>Name:</strong> {caseData.male_patient.name}</p>
           <p><strong>MPID:</strong> {caseData.male_patient.mpeid}</p>
+          {caseData.male_patient.type === 'donor' && (
+            <p style={{ marginTop: '4px', padding: '3px 6px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '4px', fontSize: '0.78rem', color: '#92400e' }}>
+              <strong>Donor ID:</strong> {caseData.male_patient.donor_id}
+            </p>
+          )}
         </div>
         <div className="patient-card">
           <h4>Female Patient</h4>
           <p><strong>Name:</strong> {caseData.female_patient.name}</p>
           <p><strong>MPID:</strong> {caseData.female_patient.mpeid}</p>
+          {caseData.female_patient.phone_number && (
+            <p><strong>Phone:</strong> {caseData.female_patient.phone_number}</p>
+          )}
+          {caseData.female_patient.type === 'donor' && (
+            <p style={{ marginTop: '4px', padding: '3px 6px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '4px', fontSize: '0.78rem', color: '#92400e' }}>
+              <strong>Donor:</strong> {caseData.female_patient.donor_name} · {caseData.female_patient.donor_mpeid}
+            </p>
+          )}
         </div>
       </div>
 

@@ -26,6 +26,26 @@ import os
 dynamodb = boto3.resource('dynamodb')
 audit_table = dynamodb.Table(os.environ.get('AUDIT_TABLE', 'IVF-AuditLog'))
 
+# IST timezone helper — all timestamps in Indian Standard Time
+from datetime import timezone, timedelta
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def now_ist():
+    """Return current IST datetime"""
+    return datetime.now(IST)
+
+def now_ist_iso():
+    """Return current IST time as ISO string (without timezone suffix for DynamoDB compatibility)"""
+    return datetime.now(IST).strftime('%Y-%m-%dT%H:%M:%S')
+
+def now_ist_date():
+    """Return current IST date as YYYY-MM-DD string"""
+    return datetime.now(IST).strftime('%Y-%m-%d')
+
+def now_ist_timestamp():
+    """Return current IST time as YYYYMMDD_HHMMSS for S3 keys"""
+    return datetime.now(IST).strftime('%Y%m%d_%H%M%S')
+
 # Action types
 ACTIONS = {
     'REGISTER_CASE': 'REGISTER_CASE',
@@ -46,7 +66,11 @@ ACTIONS = {
     'SCAN_LABEL': 'SCAN_LABEL',
     'IMAGE_DOWNLOAD': 'IMAGE_DOWNLOAD',
     'AI_GRADING': 'AI_GRADING',
+    'AI_GRADING_COMPLETED': 'AI_GRADING_COMPLETED',
+    'AI_GRADING_FAILED': 'AI_GRADING_FAILED',
     'SAVE_MANUAL_GRADE': 'SAVE_MANUAL_GRADE',
+    'MANUAL_GRADE_SAVED': 'MANUAL_GRADE_SAVED',
+    'MANUAL_GRADE_UPDATED': 'MANUAL_GRADE_UPDATED',
 }
 
 
@@ -90,7 +114,7 @@ def log_audit(
         # Other fields use snake_case for frontend compatibility
         audit_entry = {
             'auditId': str(uuid.uuid4()),  # Primary key - must be camelCase
-            'timestamp': datetime.utcnow().isoformat() + 'Z',  # Sort key - must be camelCase
+            'timestamp': now_ist_iso(),  # Sort key - IST time
             'user_id': user_info.get('userId', 'unknown'),
             'user_email': user_info.get('userEmail', 'unknown'),
             'user_name': user_info.get('userName', 'unknown'),

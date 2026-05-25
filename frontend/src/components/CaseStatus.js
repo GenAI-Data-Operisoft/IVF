@@ -14,6 +14,7 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
   const [selectedStage, setSelectedStage] = useState(null);
   const [stageDetails, setStageDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [selectedStageIsOverride, setSelectedStageIsOverride] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editedData, setEditedData] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -32,13 +33,21 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
   const viewStageDetails = async (stageId) => {
     setSelectedStage(stageId);
     setLoadingDetails(true);
+    setSelectedStageIsOverride(false);
     try {
       // Special handling for ICSI Documentation - show annotated images
       if (stageId === 'icsi_documentation') {
-        const data = await api.getAnnotatedImages(sessionId);
+        const data = await api.getAnnotatedImages(sessionId, 'icsi_documentation');
         setStageDetails(data.images || []);
         setLoadingDetails(false);
         return;
+      }
+
+      // Check if this stage was manually overridden
+      const stageData = caseData.stages[stageId];
+      if (stageData && stageData.validation_result === 'override') {
+        setSelectedStageIsOverride(true);
+        // Still load the extraction data to show the uploaded image
       }
       
       // For other stages - show extraction and validation data
@@ -77,9 +86,15 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
   const closeDetails = () => {
     setSelectedStage(null);
     setStageDetails(null);
+    setSelectedStageIsOverride(false);
   };
 
   const handleStartValidation = (stageId) => {
+    // Denudation stage uses its own dedicated view
+    if (stageId === 'denudation' && onStartOocyteMorphology) {
+      onStartOocyteMorphology();
+      return;
+    }
     // Call parent callback to navigate to stage capture
     if (onStartStage) {
       onStartStage(stageId);
@@ -156,6 +171,12 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
           </svg>
         );
+      case 'override':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ff9800" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+        );
       case 'skipped':
         return (
           <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -227,11 +248,25 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
           <h3>Male Patient</h3>
           <p><strong>Name:</strong> {caseData.male_patient.name} {caseData.male_patient.last_name}</p>
           <p><strong>MPID:</strong> {caseData.male_patient.mpeid}</p>
+          {caseData.male_patient.type === 'donor' && (
+            <p style={{ marginTop: '6px', padding: '4px 8px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', fontSize: '0.82rem', color: '#92400e' }}>
+              <strong>Donor ID:</strong> {caseData.male_patient.donor_id}
+            </p>
+          )}
         </div>
         <div className="patient-card">
           <h3>Female Patient</h3>
           <p><strong>Name:</strong> {caseData.female_patient.name} {caseData.female_patient.last_name}</p>
           <p><strong>MPID:</strong> {caseData.female_patient.mpeid}</p>
+          {caseData.female_patient.phone_number && (
+            <p><strong>Phone:</strong> {caseData.female_patient.phone_number}</p>
+          )}
+          {caseData.female_patient.type === 'donor' && (
+            <div style={{ marginTop: '6px', padding: '6px 8px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', fontSize: '0.82rem', color: '#92400e' }}>
+              <p style={{ margin: '0 0 2px' }}><strong>Donor Name:</strong> {caseData.female_patient.donor_name}</p>
+              <p style={{ margin: 0 }}><strong>Donor MPID:</strong> {caseData.female_patient.donor_mpeid}</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -245,8 +280,8 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
             const isUnlocked = true;
 
             return (
-              <div key={stage.id} className={`stage-item ${stageData.status}`} style={{ opacity: !isUnlocked && stageData.status === 'pending' ? 0.55 : 1 }}>
-                <span className="stage-icon">{getStageIcon(stageData.status)}</span>
+              <div key={stage.id} className={`stage-item ${stageData.validation_result === 'override' ? 'overridden' : stageData.status}`} style={{ opacity: !isUnlocked && stageData.status === 'pending' ? 0.55 : 1 }}>
+                <span className="stage-icon">{getStageIcon(stageData.validation_result === 'override' ? 'override' : stageData.status)}</span>
                 <div className="stage-details">
                   <h4>{stage.name}{stage.optional && <span style={{ marginLeft: '0.5rem', fontSize: '0.72rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '4px', padding: '1px 6px', fontWeight: 600 }}>Optional</span>}</h4>
                   <p>Status: <strong>{stageData.status}</strong></p>
@@ -302,7 +337,8 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
                     </button>
                   </div>
                 )}
-                {(stageData.status === 'completed' || stageData.status === 'failed' || stageData.status === 'in_progress') && !isViewer && (
+                {/* Show Retry only for failed, in_progress, or manually overridden stages — NOT for clean success */}
+                {(stageData.status === 'failed' || stageData.status === 'in_progress' || (stageData.status === 'completed' && stageData.validation_result !== 'match')) && !isViewer && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-start' }}>
                     <button
                       onClick={() => handleStartValidation(stage.id)}
@@ -394,6 +430,48 @@ function CaseStatus({ sessionId, caseData: initialData, onStartNew, onStartStage
                 <div className="loading-spinner">
                   <img src="https://d1nmtja0c4ok3x.cloudfront.net/IVFgif.gif" alt="Loading..." style={{ width: '80px', height: '80px', objectFit: 'contain' }} />
                   <p>Loading details...</p>
+                </div>
+              ) : selectedStageIsOverride ? (
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", background: "#fff3e0", border: "2px solid #ff9800", borderRadius: "10px", padding: "1rem 1.25rem", marginBottom: "1.5rem" }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff9800" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <div>
+                      <p style={{ margin: 0, fontWeight: 700, fontSize: "1rem", color: "#e65100" }}>Manually Overridden</p>
+                      <p style={{ margin: "2px 0 0", fontSize: "0.85rem", color: "#bf360c" }}>This stage was manually overridden. The original AI validation had failed but was accepted via manual override.</p>
+                    </div>
+                  </div>
+                  {stageDetails && stageDetails.length > 0 ? (
+                    <div className="details-grid">
+                      {stageDetails.map((extraction, index) => (
+                        <div key={index} className="detail-card">
+                          <h4>Image {index + 1}</h4>
+                          {extraction.imageUrl ? (
+                            <div className="detail-image-preview"><img src={extraction.imageUrl} alt={`Uploaded ${index + 1}`} /></div>
+                          ) : (
+                            <div className="detail-image-placeholder"><p>Image not available</p></div>
+                          )}
+                          <div className="detail-section">
+                            <h5>Extracted Data</h5>
+                            <div className="detail-info">
+                              {extraction.extracted_data ? (
+                                <>
+                                  {(extraction.extracted_data.male_name || extraction.extracted_data.female_name) && <p><strong>Name:</strong> {extraction.extracted_data.male_name || extraction.extracted_data.female_name}</p>}
+                                  {(extraction.extracted_data.male_mpeid || extraction.extracted_data.female_mpeid) && <p><strong>MPID:</strong> {extraction.extracted_data.male_mpeid || extraction.extracted_data.female_mpeid}</p>}
+                                </>
+                              ) : (
+                                <>
+                                  <p><strong>Name:</strong> {extraction.extracted_name || 'N/A'}</p>
+                                  <p><strong>MPID:</strong> {extraction.extracted_mpeid || 'N/A'}</p>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ color: "#666", textAlign: "center" }}>No extraction data available.</p>
+                  )}
                 </div>
               ) : stageDetails && stageDetails.length > 0 ? (
                 selectedStage === 'icsi_documentation' ? (

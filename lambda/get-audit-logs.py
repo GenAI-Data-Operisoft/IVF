@@ -2,7 +2,7 @@
 get-audit-logs.py
 
 Returns audit log entries from the IVF-AuditLog DynamoDB table. Supports
-filtering by date range, action type, stage, user email, and session ID.
+filtering by date range, action type, stage, user email, session ID, and center.
 Used by the Audit Log screen in the frontend (admin and supervisor roles only).
 
 Trigger: GET /audit-logs (API Gateway, Cognito authenticated)
@@ -18,6 +18,7 @@ from boto3.dynamodb.conditions import Key, Attr
 
 dynamodb = boto3.resource('dynamodb')
 audit_table = dynamodb.Table(os.environ['AUDIT_TABLE'])
+cases_table = dynamodb.Table(os.environ.get('CASES_TABLE', 'IVF-Cases'))
 
 
 def decimal_default(obj):
@@ -27,19 +28,35 @@ def decimal_default(obj):
     raise TypeError
 
 
+def get_session_ids_for_center(center):
+    """Get all session IDs for a given center from IVF-Cases."""
+    try:
+        resp = cases_table.scan(
+            FilterExpression='#center = :center',
+            ExpressionAttributeNames={'#center': 'center'},
+            ExpressionAttributeValues={':center': center},
+            ProjectionExpression='sessionId'
+        )
+        ids = set(item['sessionId'] for item in resp.get('Items', []))
+        while 'LastEvaluatedKey' in resp:
+            resp = cases_table.scan(
+                FilterExpression='#center = :center',
+                ExpressionAttributeNames={'#center': 'center'},
+                ExpressionAttributeValues={':center': center},
+                ProjectionExpression='sessionId',
+                ExclusiveStartKey=resp['LastEvaluatedKey']
+            )
+            ids.update(item['sessionId'] for item in resp.get('Items', []))
+        return ids
+    except Exception as e:
+        print(f"Error fetching sessions for center: {e}")
+        return set()
+
+
 def lambda_handler(event, context):
     """
     Reads filter parameters from the query string, scans the audit table,
     and returns matching log entries sorted newest first.
-
-    Query parameters:
-      start_date  - ISO format date string (default: 7 days ago)
-      end_date    - ISO format date string (default: now)
-      action      - Filter by action type (e.g. VALIDATION_PASS)
-      stage       - Filter by IVF stage (e.g. label_validation)
-      user_email  - Filter by user email (partial match)
-      session_id  - Filter by exact session ID
-      limit       - Max records to return (default: 100, max: 500)
     """
     try:
         params = event.get('queryStringParameters') or {}
@@ -55,8 +72,7 @@ def lambda_handler(event, context):
         center_filter = params.get('center')
         limit = min(int(params.get('limit', 100)), 500)
 
-        # Build the DynamoDB filter expression dynamically based on which
-        # filters were provided. All active filters are combined with AND.
+        # Build the DynamoDB filter expression
         filter_expressions = []
         expression_values = {}
         expression_names = {'#ts': 'timestamp'}
@@ -77,7 +93,6 @@ def lambda_handler(event, context):
             expression_names['#stage'] = 'stage'
 
         if user_email:
-            # Partial match so staff can search by partial email address
             filter_expressions.append('contains(#user_email, :user_email)')
             expression_values[':user_email'] = user_email
             expression_names['#user_email'] = 'user_email'
@@ -87,12 +102,9 @@ def lambda_handler(event, context):
             expression_values[':session_id'] = session_id
             expression_names['#session_id'] = 'session_id'
 
-        if center_filter:
-            filter_expressions.append('#center = :center')
-            expression_values[':center'] = center_filter
-            expression_names['#center'] = 'center'
-
-        scan_kwargs = {'Limit': limit}
+        # Scan with a higher limit to account for post-filtering
+        scan_limit = limit
+        scan_kwargs = {'Limit': min(scan_limit, 5000)}
         if filter_expressions:
             scan_kwargs['FilterExpression'] = ' AND '.join(filter_expressions)
             scan_kwargs['ExpressionAttributeValues'] = expression_values
@@ -101,10 +113,10 @@ def lambda_handler(event, context):
         response = audit_table.scan(**scan_kwargs)
         items = response.get('Items', [])
 
-        # Sort newest first so the most recent events appear at the top
+        # Sort newest first
         items.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        items = items[:limit]
 
-        # Build a summary count per action type for the dashboard cards
         total_count = len(items)
         action_counts = {}
         for item in items:
@@ -129,7 +141,8 @@ def lambda_handler(event, context):
                     'action': action_filter,
                     'stage': stage_filter,
                     'user_email': user_email,
-                    'session_id': session_id
+                    'session_id': session_id,
+                    'center': center_filter
                 }
             }, default=decimal_default)
         }
@@ -138,12 +151,8 @@ def lambda_handler(event, context):
         print(f"Error getting audit logs: {str(e)}")
         return {
             'statusCode': 500,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'error': 'Failed to retrieve audit logs',
-                'message': str(e)
-            })
+            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+            'body': json.dumps({'error': 'Failed to retrieve audit logs', 'message': str(e)})
         }
+
+

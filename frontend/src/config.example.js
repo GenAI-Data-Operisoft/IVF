@@ -1,28 +1,25 @@
-/**
- * config.example.js
- *
- * Template for the runtime configuration file.
- * Copy this file to config.js and fill in the values from your AWS deployment.
- * config.js is gitignored and should never be committed to version control.
- */
+// Copy this file to config.js and fill in your values
+// config.js is gitignored — never commit real endpoints
 
-// The base URL of the API Gateway REST API deployed in AWS.
-// All frontend API calls are prefixed with this URL.
-export const API_BASE_URL = 'https://YOUR_API_ID.execute-api.YOUR_REGION.amazonaws.com/prod';
+export const API_BASE_URL = 'https://<your-api-id>.execute-api.ap-south-1.amazonaws.com/prod';
 
-// The ordered list of IVF procedure stages.
-// Each stage has an id (used as the DynamoDB key), a display name, and the
-// number of images required before the AI validation can run.
-// male_sample_collection requires 2 images because the tube has labels for
-// both the male and female patient on opposite sides.
-// icsi_documentation requires 0 because images are added one at a time
-// without a fixed count.
+// Format date/time in IST for display
+export const formatIST = (dateStr) => {
+  if (!dateStr) return '';
+  return new Date(dateStr).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
 export const STAGES = [
-  { id: 'label_validation',       name: 'Label Validation',       images: 1 },
-  { id: 'oocyte_collection',      name: 'Oocyte Collection',       images: 1 },
-  { id: 'denudation',             name: 'Denudation',              images: 1 },
-  { id: 'male_sample_collection', name: 'Male Sample Collection',  images: 2 },
-  { id: 'icsi',                   name: 'ICSI',                    images: 1 },
-  { id: 'icsi_documentation',     name: 'ICSI Documentation',      images: 0 },
-  { id: 'culture',                name: 'Culture',                 images: 1 },
+  { id: 'label_validation', name: 'Patient Verification', images: 1, subtitle: 'Dish validation' },
+  { id: 'oocyte_collection', name: 'Oocyte Collection', images: 1, subtitle: 'Dish validation · COC/OCC image annotated with patient name and MPID' },
+  { id: 'iui', name: 'IUI', images: 2, optional: true, subtitle: 'Male sperm sample image · Female sample image' },
+  { id: 'denudation', name: 'Oocyte Morphology', images: 1, subtitle: 'Dish validation · Denuded oocyte image annotated with patient name and MPID' },
+  { id: 'male_sample_collection', name: 'Sperm Preparation', images: 2, subtitle: 'Semen container image · Sperm processing tube image' },
+  { id: 'icsi', name: 'ICSI/IVF', images: 1, subtitle: 'Dish validation · ICSI images annotated with patient name and MPID' },
+  { id: 'fertilization_check', name: 'Fertilization Check (Day 1)', images: 1, subtitle: 'Dish validation · Fertilized oocyte annotated with patient name and MPID' },
+  { id: 'icsi_documentation', name: 'Cleavage (Day 3)', images: 0, subtitle: 'Dish validation · Day 3 embryo images annotated with patient name and MPID' },
+  { id: 'blastocyst', name: 'Blastocyst (Day 5)', images: 0, subtitle: 'Dish validation · Blastocyst images annotated with patient name and MPID' },
+  { id: 'day6', name: 'Blastocyst (Day 6)', images: 0, subtitle: 'Dish validation · Blastocyst images annotated with patient name and MPID' },
+  { id: 'day7', name: 'Blastocyst (Day 7)', images: 0, subtitle: 'Dish validation · Blastocyst images annotated with patient name and MPID' },
+  { id: 'culture', name: 'Frozen Embryo Transfer (FET)', images: 1, subtitle: 'Cryostraw validation · Thawed embryo images annotated with patient name and MPID' }
 ];

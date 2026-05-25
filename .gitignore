@@ -12,14 +12,20 @@ dist/
 .env.production
 .env.development
 *.env
-aws-config.js
-config.js
+
+# AWS config files with real endpoints/credentials
+frontend/src/aws-config.js
+frontend/src/config.js
 
 # AWS credentials
 .aws/
 credentials
 *.pem
 *.key
+
+# Generated deployment config (contains account IDs, endpoints)
+dev-environment-config.txt
+*-environment-config.txt
 
 # Logs
 *.log
@@ -40,3 +46,7 @@ Thumbs.db
 __pycache__/
 *.pyc
 *.pyo
+
+# Excel/binary reports (use docs/ for markdown only)
+docs/*.xlsx
+scripts/*.xlsx

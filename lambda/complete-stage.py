@@ -1,3 +1,8 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
 """
 complete-stage.py
 
@@ -14,7 +19,7 @@ import json
 import boto3
 import os
 from datetime import datetime
-from audit_helper import log_audit, extract_user_info
+from audit_helper import log_audit, extract_user_info, now_ist_iso, now_ist_date, now_ist_timestamp
 
 dynamodb = boto3.resource('dynamodb')
 cases_table = dynamodb.Table(os.environ.get('CASES_TABLE', 'IVF-Cases'))
@@ -28,6 +33,17 @@ def lambda_handler(event, context):
         # Allow optional status override (e.g. 'skipped' for optional stages)
         status = body.get('status', 'completed')
 
+        # Initialize stage key if it doesn't exist (for stages added after case creation e.g. day6, day7, iui)
+        try:
+            cases_table.update_item(
+                Key={'sessionId': session_id},
+                UpdateExpression='SET stages.#stage = if_not_exists(stages.#stage, :empty)',
+                ExpressionAttributeNames={'#stage': stage},
+                ExpressionAttributeValues={':empty': {'status': 'pending', 'images_required': 0, 'images_uploaded': 0}}
+            )
+        except Exception:
+            pass  # Stage already exists, continue
+
         cases_table.update_item(
             Key={'sessionId': session_id},
             UpdateExpression='SET stages.#stage.#status = :status, stages.#stage.#completed_at = :completed_at',
@@ -38,7 +54,7 @@ def lambda_handler(event, context):
             },
             ExpressionAttributeValues={
                 ':status': status,
-                ':completed_at': datetime.utcnow().isoformat()
+                ':completed_at': now_ist_iso()
             }
         )
 

@@ -1,3 +1,8 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
 import json
 import boto3
 import os
@@ -146,7 +151,7 @@ def lambda_handler(event, context):
                 'name': case['female_patient']['name'],
                 'mpeid': case['female_patient']['mpeid']
             },
-            'captured_at': datetime.utcnow().isoformat(),
+            'captured_at': now_ist_iso(),
             'annotation_status': 'completed',
             'download_count': 0
         }
@@ -200,7 +205,7 @@ def annotate_image(image_bytes, male_patient, female_patient):
     draw = ImageDraw.Draw(image, 'RGBA')
     
     # Prepare text
-    current_date = datetime.utcnow().strftime('%Y-%m-%d')
+    current_date = now_ist_date()
     text_lines = [
         f"Male: {male_patient['name']} ({male_patient['mpeid']})",
         f"Female: {female_patient['name']} ({female_patient['mpeid']})",

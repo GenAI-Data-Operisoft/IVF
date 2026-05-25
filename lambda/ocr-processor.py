@@ -1,3 +1,8 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
 import json
 import boto3
 import base64
@@ -24,6 +29,8 @@ STAGE_TABLE_MAP = {
     'fertilization-check': os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
     'icsi-documentation': os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
     'blastocyst-stage': os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
+    'day6': os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
+    'day7': os.environ.get('LABEL_VALIDATION_TABLE', 'IVF-LabelValidationExtractions'),
 }
 
 def extract_with_converse_api(image_bytes, stage, model_id, model_name, image_number=1):
@@ -64,6 +71,13 @@ def extract_with_converse_api(image_bytes, stage, model_id, model_name, image_nu
     elif stage in ('fertilization-check', 'icsi-documentation', 'blastocyst-stage'):
         data_instruction = """
     This is a FERTILIZATION CHECK stage - extract the FEMALE patient's information from this label.
+    Put the data in female_name and female_mpeid fields.
+    Leave male_name and male_mpeid as null.
+    """
+    elif stage in ('day6', 'day7'):
+        day_label = 'Day 6' if stage == 'day6' else 'Day 7'
+        data_instruction = f"""
+    This is a {day_label} BLASTOCYST stage - extract the FEMALE patient's information from this label.
     Put the data in female_name and female_mpeid fields.
     Leave male_name and male_mpeid as null.
     """
@@ -344,6 +358,13 @@ def extract_text_with_bedrock(image_bytes, stage, model_config, image_number=1):
     elif stage in ('fertilization-check', 'icsi-documentation', 'blastocyst-stage'):
         data_instruction = """
     This is a FERTILIZATION CHECK stage - extract the FEMALE patient's information from this label.
+    Put the data in female_name and female_mpeid fields.
+    Leave male_name and male_mpeid as null.
+    """
+    elif stage in ('day6', 'day7'):
+        day_label = 'Day 6' if stage == 'day6' else 'Day 7'
+        data_instruction = f"""
+    This is a {day_label} BLASTOCYST stage - extract the FEMALE patient's information from this label.
     Put the data in female_name and female_mpeid fields.
     Leave male_name and male_mpeid as null.
     """
@@ -771,7 +792,7 @@ def store_extraction_result(stage_folder, session_id, s3_key, extracted_data):
         'extraction_status': 'extracted',
         'bedrock_model': extracted_data.get('model_used', 'unknown'),
         'confidence_score': extracted_data.get('confidence_score', 0),
-        'extracted_at': datetime.utcnow().isoformat(),
+        'extracted_at': now_ist_iso(),
         # Add top-level fields for validator to access
         'male_name': extracted_data.get('male_name'),
         'male_mpeid': extracted_data.get('male_mpeid'),

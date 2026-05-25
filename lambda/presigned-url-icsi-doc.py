@@ -1,3 +1,9 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
+from audit_helper import now_ist_iso, now_ist_date, now_ist_timestamp
 import json
 import boto3
 import os
@@ -20,7 +26,7 @@ def lambda_handler(event, context):
         stage_folder = body.get('stageFolder', 'icsi')
         
         # Generate S3 key for original image
-        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        timestamp = now_ist_timestamp()
         s3_key = f'{stage_folder}-injected-original/{session_id}/image_{image_number}_{timestamp}.jpg'
         
         # Generate presigned URL for upload (valid for 10 minutes)

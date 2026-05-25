@@ -1,3 +1,8 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
 """
 embryo-grading.py
 
@@ -14,7 +19,7 @@ import boto3
 import os
 import re
 from datetime import datetime
-from audit_helper import log_audit, extract_user_info
+from audit_helper import log_audit, extract_user_info, now_ist_iso, now_ist_date, now_ist_timestamp
 
 dynamodb = boto3.resource('dynamodb')
 s3_client = boto3.client('s3')
@@ -29,103 +34,84 @@ CORS = {
     'Access-Control-Allow-Methods': 'POST,OPTIONS'
 }
 
-GRADING_PROMPT = """You are an expert clinical embryologist with 20+ years of IVF laboratory experience. Your task is to analyze this embryo image and provide an accurate grade. This assessment directly influences patient treatment — accuracy is critical.
+GRADING_PROMPT = """You are an expert clinical embryologist. Analyze the provided embryo image and provide an accurate grade. This assessment directly influences patient treatment — accuracy is critical.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PHASE 1 — IDENTIFY WHAT YOU SEE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-First, is this a microscopic embryo image?
-- If you see a petri dish label, text, equipment, or anything non-biological → is_embryo: false
-- If you see a biological specimen with a zona pellucida → is_embryo: true, continue below
+STEP 1 — IDENTIFY WHAT YOU SEE:
+First determine if this is a microscopic embryo image.
+- If the image shows a petri dish label, equipment, text, or anything NOT a biological specimen → set is_embryo: false
+- If you see a biological specimen with zona pellucida, blastomeres, or blastocoel cavity → set is_embryo: true, continue below
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PHASE 2 — DETERMINE THE STAGE (CRITICAL)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Look at the INTERNAL STRUCTURE of the embryo very carefully:
+STEP 2 — DETERMINE DEVELOPMENTAL STAGE:
+Look at the INTERNAL STRUCTURE very carefully:
 
 IS THERE A FLUID-FILLED CAVITY (blastocoel)?
-→ YES — This is a BLASTOCYST (Day 5, 6, or 7). Go to BLASTOCYST GRADING below.
-→ NO — This is a CLEAVAGE STAGE embryo (Day 1-4). Go to CLEAVAGE GRADING below.
+YES → BLASTOCYST (Day 5, 6, or 7). Use BLASTOCYST GRADING below.
+NO  → CLEAVAGE STAGE (Day 1-4). Use CLEAVAGE GRADING below.
 
 Key visual difference:
-- BLASTOCYST: You will see a large dark/clear fluid cavity taking up significant space inside the zona. The embryo looks like it has an "empty" or "hollow" area. Individual cells are NOT countable — instead you see a compact cell mass (ICM) on one side and a thin cell layer (TE) lining the cavity.
-- CLEAVAGE: You can see and COUNT individual round cells (blastomeres) separated from each other. No large fluid cavity. Cells are distinct and countable.
+- BLASTOCYST: Large hollow/fluid area inside. Individual cells NOT countable. Compact ICM on one side, thin TE layer lining the cavity.
+- CLEAVAGE: Distinct countable round cells (blastomeres). No large fluid cavity.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BLASTOCYST GRADING — Day 5 / 6 / 7
-(Use ONLY if you confirmed a fluid cavity above)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Use Gardner & Schoolcraft classification. Grade = [Expansion][ICM][TE] e.g. "5AB"
+BLASTOCYST GRADING — Gardner & Schoolcraft Classification
+(Use ONLY if fluid cavity confirmed above)
 
-EXPANSION (1–6) — How large is the blastocoel cavity and what is the zona status?
-  1 = Early blastocyst: cavity present but <50% of embryo volume, zona normal thickness
-  2 = Blastocyst: cavity >50% of volume, zona intact and normal thickness
-  3 = Full blastocyst: cavity fills entire embryo, zona intact and normal thickness
-  4 = Expanded: cavity larger than original embryo size, zona VISIBLY THINNING but still completely intact with NO breach or hole
-  5 = Hatching: zona has a VISIBLE BREACH/HOLE/RUPTURE — trophectoderm cells are actively pushing through or herniated out. The zona is broken, not just thin.
-  6 = Hatched: embryo completely outside the zona — zona is empty or absent
+Grade the blastocyst by assessing three parameters and output in format [Expansion][ICM][TE] e.g. "5AB":
 
-CRITICAL DISTINCTION between 4 and 5:
-  Grade 4 = zona is thin but INTACT (no hole, no cells outside)
+(1) EXPANSION STAGE (1-6):
+  1 = Early blastocyst: cavity <50% of embryo volume
+  2 = Blastocyst: cavity >50% of volume, zona intact
+  3 = Full blastocyst: cavity fills entire embryo, zona intact
+  4 = Expanded: cavity larger than embryo, zona VISIBLY THINNING but INTACT — no hole, no cells outside
+  5 = Hatching: zona has a VISIBLE HOLE — trophectoderm cells pushing through or herniated out
+  6 = Hatched: embryo completely outside the zona
+
+  CRITICAL — Grade 4 vs 5:
+  Grade 4 = zona thin but INTACT (no hole, no cells outside)
   Grade 5 = zona has a HOLE and cells are OUTSIDE or pushing through
-  If you see ANY trophectoderm cells outside the zona boundary → it is grade 5, not 4
+  If ANY trophectoderm cells are visible outside the zona boundary → Grade 5, not 4
 
-ICM — Inner Cell Mass (the compact cluster of cells on one side of the cavity):
-  A = Prominent, tightly packed, many cells, clearly defined — looks like a solid dark mass
+(2) INNER CELL MASS quality (A/B/C):
+  A = Prominent, tightly packed, many cells, clearly defined solid dark mass. Even during hatching, if ICM is a distinct compact cluster → Grade A.
   B = Loosely grouped, fewer cells, less defined boundary
-  C = Very few cells, barely visible, degenerate or fragmented appearance
+  C = Very few cells, barely visible, degenerate appearance
 
-TE — Trophectoderm (the thin layer of cells lining the inside of the cavity wall):
-  A = Many small cells forming a cohesive, uniform, continuous epithelial layer
+(3) TROPHECTODERM quality (A/B/C):
+  A = Many small cells forming a cohesive, continuous epithelial layer
   B = Fewer cells, loose or irregular arrangement, gaps visible
-  C = Very few large cells, sparse coverage, poor quality
+  C = Very few large cells, sparse coverage
 
-BLASTOCYST QUALITY:
-  Excellent: 4AA, 5AA, 4AB, 5AB, 4BA, 5BA
-  Good: 3AA, 3AB, 3BA, 4BB, 5BB, 6AA, 6AB
-  Fair: 2AA, 2AB, 3BB, any expansion with one C
-  Poor: Any C in both ICM and TE, or expansion 1-2 with B/C grades
+Quality: Excellent (4AA/5AA/4AB/5AB/4BA/5BA) | Good (3AA/3AB/3BA/4BB/5BB) | Fair (2AA/2AB/3BB/any one C) | Poor (both C or expansion 1-2 with B/C)
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CLEAVAGE GRADING — Day 1 / 2 / 3 / 4
-(Use ONLY if you confirmed individual countable cells above)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Identify the day:
-  Day 1 (Zygote): 1 cell, 2 pronuclei visible, polar bodies present
-  Day 2: 2-4 distinct blastomeres
-  Day 3: 6-10 blastomeres (ideal: 7-8 cells)
-  Day 4 (Morula): Cells compacted into a dense mass, individual cells hard to distinguish
+CLEAVAGE GRADING — Day 1/2/3/4
+(Use ONLY if individual countable cells confirmed above)
 
-For Day 3 specifically, assess:
-1. CELL COUNT: Count every visible blastomere (ideal = 7-8)
-2. FRAGMENTATION: Estimate % of cytoplasm as anucleate fragments
-   Grade 1 = <10% | Grade 2 = 10-25% | Grade 3 = 25-50% | Grade 4 = >50%
-3. SYMMETRY: Are blastomeres equal in size? (Even = good, Uneven = poor)
-4. MULTINUCLEATION: Any cell with >1 nucleus? (Present = significantly reduces viability)
+  Day 1 (Zygote): 1 cell, 2 pronuclei, polar bodies
+  Day 2: 2-4 blastomeres
+  Day 3: 6-10 blastomeres (ideal 7-8)
+  Day 4 (Morula): Compacted mass, cells hard to distinguish
 
+For Day 3: assess cell count, fragmentation % (Grade 1 <10%, Grade 2 10-25%, Grade 3 25-50%, Grade 4 >50%), symmetry, multinucleation
 Grade format: "Grade [1-4], [X] cells" e.g. "Grade 1, 8 cells"
-Quality: Excellent (Grade 1, 7-8 cells, even, no MN) | Good (Grade 1-2, 6-9 cells) | Fair (Grade 2-3) | Poor (Grade 3-4, <5 cells, or MN present)
+Quality: Excellent (Grade 1, 7-8 cells, even) | Good (Grade 1-2, 6-9 cells) | Fair (Grade 2-3) | Poor (Grade 3-4 or <5 cells)
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RECOMMENDATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Transfer — Excellent/Good quality, suitable for fresh transfer
-Freeze — Good quality, suitable for vitrification
-Continue Culture — Early stage or borderline, extend culture
-Discard — Poor quality, not viable
+RECOMMENDATION:
+  Transfer — Excellent/Good quality, suitable for fresh transfer
+  Freeze — Good quality, suitable for vitrification
+  Continue Culture — Early stage or borderline
+  Discard — Poor quality, not viable
 
-CONFIDENCE: 0.9-1.0 = clear image, certain | 0.7-0.89 = minor artifacts, confident | 0.5-0.69 = some structures unclear | <0.5 = poor image, speculative
+CONFIDENCE: 0.9-1.0 = clear image | 0.7-0.89 = minor artifacts | 0.5-0.69 = some structures unclear | <0.5 = poor image
 
 RESPOND WITH ONLY THIS JSON — NO OTHER TEXT:
 {
   "is_embryo": true or false,
   "not_embryo_reason": "what the image shows if not embryo, else empty string",
   "stage": "Day 1 (Zygote)" or "Day 2 (2-4 cell)" or "Day 3 (Cleavage)" or "Day 4 (Morula)" or "Day 5 (Blastocyst)" or "Day 6 (Expanded Blastocyst)" or "Day 7 (Hatching/Hatched Blastocyst)",
-  "grade": "Grade 1, 8 cells" or "4AA" or "5AB" etc.,
+  "grade": "5AB" or "4AA" or "Grade 1, 8 cells" etc.,
   "quality": "Excellent" or "Good" or "Fair" or "Poor",
   "recommendation": "Transfer" or "Freeze" or "Continue Culture" or "Discard",
-  "description": "3-4 sentences: state stage, key morphological findings (cavity size/ICM/TE for blastocyst OR cell count/fragmentation/symmetry for cleavage), zona appearance, and any notable features.",
-  "clinical_notes": "Most important clinical finding for the embryologist — e.g. hatching status, multinucleation, borderline grade, or image quality caveat.",
+  "description": "Structured justification for each parameter: (1) Expansion — observed cavity size and zona status with reasoning, (2) ICM — compactness and cell count observed, (3) TE — cohesion and cell arrangement observed. Include overall morphological assessment.",
+  "clinical_notes": "Key clinical observation — hatching status, borderline grade, image quality caveat, or recommendation for the embryologist.",
   "confidence_score": 0.0 to 1.0
 }"""
 
@@ -236,7 +222,7 @@ def lambda_handler(event, context):
             'confidence_score': str(grading.get('confidence_score', 0.5)),
             'model_used': 'Qwen3 VL 235B',
             'raw_response': raw_text[:2000],
-            'graded_at': datetime.utcnow().isoformat() + 'Z'
+            'graded_at': now_ist_iso() + 'Z'
         }
 
         # Store in DynamoDB

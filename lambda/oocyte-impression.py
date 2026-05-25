@@ -1,3 +1,8 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
 """
 Oocyte Impression handler — GET/POST remark and image metadata for the denudation stage.
 Images are uploaded directly to S3 via presigned URLs (existing flow).
@@ -59,7 +64,7 @@ def lambda_handler(event, context):
             updated = {
                 **existing,
                 'remark': remark,
-                'updated_at': datetime.utcnow().isoformat(),
+                'updated_at': now_ist_iso(),
             }
 
             cases_table.update_item(

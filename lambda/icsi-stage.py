@@ -1,3 +1,8 @@
+from datetime import datetime, timezone, timedelta
+_IST = timezone(timedelta(hours=5, minutes=30))
+def now_ist_iso(): return datetime.now(_IST).strftime('%Y-%m-%dT%H:%M:%S')
+def now_ist_date(): return datetime.now(_IST).strftime('%Y-%m-%d')
+def now_ist_timestamp(): return datetime.now(_IST).strftime('%Y%m%d_%H%M%S')
 import json
 import boto3
 import os
@@ -44,7 +49,7 @@ def lambda_handler(event, context):
                         'procedure_type': body.get('procedure_type', ''),
                         'remark': body.get('remark', ''),
                         'video_s3_key': body.get('video_s3_key', ''),
-                        'updated_at': datetime.utcnow().isoformat()
+                        'updated_at': now_ist_iso()
                     }
                 }
             )

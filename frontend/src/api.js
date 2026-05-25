@@ -506,5 +506,40 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}/audit-logs?${params}`);
     if (!response.ok) throw new Error('Failed to fetch audit logs');
     return response.json();
-  }
+  },
+
+  // ===== SOCIAL EMBRYO FREEZING =====
+  registerSocialFreezingCase: async (caseData) => {
+    const response = await fetch(`${API_BASE_URL}/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...caseData,
+        case_type: 'social_freezing',
+        male_patient: { name: 'N/A', mpeid: '0', type: 'na' },
+        procedure_start_date: caseData.procedure_date
+      })
+    });
+    if (!response.ok) throw new Error('Failed to register social freezing case');
+    return response.json();
+  },
+
+  getSocialFreezingCase: async (sessionId) => {
+    // Social freezing cases stored in IVF-Cases — use existing /case endpoint
+    const response = await fetch(`${API_BASE_URL}/case/${sessionId}`);
+    if (!response.ok) throw new Error('Failed to fetch social freezing case');
+    return response.json();
+  },
+
+  listSocialFreezingCases: async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/sessions?limit=100&is_admin=true`);
+      if (!response.ok) return { cases: [] };
+      const data = await response.json();
+      const all = data.sessions || [];
+      // Filter to social freezing cases only
+      const sfCases = all.filter(s => s.case_type === 'social_freezing');
+      return { cases: sfCases };
+    } catch { return { cases: [] }; }
+  },
 };

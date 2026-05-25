@@ -1,14 +1,24 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'IVF Witness Capture - S3 Bucket for Artifacts'
+Description: 'IVF DEV Environment - S3 Artifacts Bucket'
+
+Parameters:
+  Env:
+    Type: String
+    Default: Dev
+    Description: Environment name for resource naming
+  BucketPrefix:
+    Type: String
+    Default: c9-ivf-dev-artifacts
+    Description: Prefix for the S3 bucket name
 
 Resources:
   # ========================================
   # S3 Bucket for Image Artifacts
   # ========================================
-  IVFArtifactsBucket:
+  ArtifactsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub 'c9-ivf-witness-capture-artifacts-${AWS::AccountId}'
+      BucketName: !Sub '${BucketPrefix}-${AWS::AccountId}'
       VersioningConfiguration:
         Status: Enabled
       LifecycleConfiguration:
@@ -18,7 +28,7 @@ Resources:
             Transitions:
               - TransitionInDays: 90
                 StorageClass: GLACIER
-            ExpirationInDays: 2555  # 7 years retention
+            ExpirationInDays: 2555
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -37,22 +47,14 @@ Resources:
               - POST
               - GET
             AllowedOrigins:
-              - '*'  # Will be restricted to CloudFront domain in production
+              - '*'
             MaxAge: 3000
       NotificationConfiguration:
         EventBridgeConfiguration:
           EventBridgeEnabled: true
       Tags:
         - Key: Application
-          Value: IVF-WitnessCapture
-        - Key: Project
-          Value: Cloudnine-IVF
-        - Key: Environment
-          Value: Production
-        - Key: ManagedBy
-          Value: CloudFormation
-        - Key: Owner
-          Value: Cloudnine
+          Value: IVF-Witness-Capture
         - Key: Environment
           Value: Development
         - Key: DataClassification
@@ -61,10 +63,10 @@ Resources:
   # ========================================
   # S3 Bucket Policy
   # ========================================
-  IVFArtifactsBucketPolicy:
+  ArtifactsBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
-      Bucket: !Ref IVFArtifactsBucket
+      Bucket: !Ref ArtifactsBucket
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -72,7 +74,7 @@ Resources:
             Effect: Deny
             Principal: '*'
             Action: s3:PutObject
-            Resource: !Sub '${IVFArtifactsBucket.Arn}/*'
+            Resource: !Sub '${ArtifactsBucket.Arn}/*'
             Condition:
               StringNotEquals:
                 s3:x-amz-server-side-encryption: AES256
@@ -81,36 +83,16 @@ Resources:
             Principal: '*'
             Action: s3:*
             Resource:
-              - !GetAtt IVFArtifactsBucket.Arn
-              - !Sub '${IVFArtifactsBucket.Arn}/*'
+              - !GetAtt ArtifactsBucket.Arn
+              - !Sub '${ArtifactsBucket.Arn}/*'
             Condition:
               Bool:
                 aws:SecureTransport: false
 
 Outputs:
   BucketName:
-    Description: S3 bucket name for IVF artifacts
-    Value: !Ref IVFArtifactsBucket
-    Export:
-      Name: !Sub '${AWS::StackName}-BucketName'
-
+    Value: !Ref ArtifactsBucket
   BucketArn:
-    Description: S3 bucket ARN
-    Value: !GetAtt IVFArtifactsBucket.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-BucketArn'
-
+    Value: !GetAtt ArtifactsBucket.Arn
   BucketDomainName:
-    Description: S3 bucket domain name
-    Value: !GetAtt IVFArtifactsBucket.DomainName
-    Export:
-      Name: !Sub '${AWS::StackName}-BucketDomainName'
-
-  FolderStructure:
-    Description: Expected folder structure in bucket
-    Value: |
-      male-sample-collection/{sessionId}/
-      oocyte-collection/{sessionId}/
-      denudation/{sessionId}/
-      icsi/{sessionId}/
-      culture/{sessionId}/
+    Value: !GetAtt ArtifactsBucket.DomainName
